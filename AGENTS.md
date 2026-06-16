@@ -2,12 +2,12 @@
 
 ## Project
 - C# library that wraps the public models.dev API (`https://models.dev/api.json`) for .NET consumers.
-- Single project: `src/ModelsDotDevDotnet/ModelsDotDevDotnet.csproj`; solution is `src/ModelsDotDevDotnet.slnx` (XML solution format).
+- Single project: `src/ModelsDotDevSharp/ModelsDotDevSharp.csproj`; solution is `src/ModelsDotDevSharp.slnx` (XML solution format).
 - `TargetFramework=net10.0`, `LangVersion=14`. No multi-targeting. No `global.json` — SDK version is whatever is installed locally.
 
 ## Build, package, restore
-- Build: `dotnet build src/ModelsDotDevDotnet.slnx` (or `dotnet build src/ModelsDotDevDotnet/ModelsDotDevDotnet.csproj`).
-- Pack: `dotnet pack src/ModelsDotDevDotnet/ModelsDotDevDotnet.csproj` — `GeneratePackageOnBuild=true` is set, so a `.nupkg` is produced.
+- Build: `dotnet build src/ModelsDotDevSharp.slnx` (or `dotnet build src/ModelsDotDevSharp/ModelsDotDevSharp.csproj`).
+- Pack: `dotnet pack src/ModelsDotDevSharp/ModelsDotDevSharp.csproj` — `GeneratePackageOnBuild=true` is set, so a `.nupkg` is produced.
 - No tests: there is no test project. `dotnet test` is a no-op. Don't invent one without asking.
 - No CI workflows exist in `.github/workflows/`. Dependabot (`.github/dependabot.yml`) updates NuGet weekly and looks for GitHub Actions (none yet).
 
@@ -20,8 +20,8 @@
 ## AOT / trimming constraints
 - The project sets `IsTrimmable=true`, `PublishTrimmed=true`, `EnableAoTAnalyzer=true`. Treat the library as AOT- and trim-safe.
 - JSON deserialization goes through `System.Text.Json` **source generators** only — no reflection. The two contexts live at:
-  - `src/ModelsDotDevDotnet/Contexts/AIProviderJsonContext.cs` (`AIProviderInfo`)
-  - `src/ModelsDotDevDotnet/Contexts/AIProviderArrayJsonContext.cs` (`AIProviderInfo[]`)
+  - `src/ModelsDotDevSharp/Contexts/AIProviderJsonContext.cs` (`AIProviderInfo`)
+  - `src/ModelsDotDevSharp/Contexts/AIProviderArrayJsonContext.cs` (`AIProviderInfo[]`)
 - When you add a new serializable model, you must also add a matching `[JsonSerializable(typeof(YourType))]` partial context (or extend an existing one). Otherwise AOT builds will fail and trimming warnings will appear.
 - `ModelInfoProvider` takes `IHttpClientFactory` via constructor injection — that is the supported HTTP path. Don't add `static HttpClient` fields.
 
@@ -32,7 +32,7 @@
 - Public API surface: `ModelInfoProvider` (concrete) and `IModelInfoProvider` (abstraction in `Abstractions/`). New methods belong on the interface and the implementation together.
 
 ## Code layout conventions
-- Namespaces: root types in `ModelsDotDevDotnet`, abstractions in `ModelsDotDevDotnet.Abstractions`, JSON contexts in `ModelsDotDevDotnet.Contexts`. `GlobalUsings.cs` imports all three plus `System.Text.Json.Serialization`, so individual files usually skip those usings.
+- Namespaces: root types in `ModelsDotDevSharp`, abstractions in `ModelsDotDevSharp.Abstractions`, JSON contexts in `ModelsDotDevSharp.Contexts`. `GlobalUsings.cs` imports all three plus `System.Text.Json.Serialization`, so individual files usually skip those usings.
 - Models are C# `record` types with mutable `get; set;` properties (not `init`). Keep that pattern for consistency with the existing files.
 - Every source file starts with the MIT license header (see any `Models/*.cs`).
 - The `.csproj.DotSettings` file is a JetBrains Rider/ReSharper setting (namespace-folder skip). Ignore it unless working in Rider.
@@ -45,3 +45,17 @@
 ## What is intentionally not here
 - No README beyond the one-liner. Don't expand the README unless asked.
 - No analyzer, formatter, or lint config files (`Directory.Build.props`, `Directory.Build.targets`, `.editorconfig`) are committed. The repo relies on .NET SDK defaults plus the Rider `.DotSettings` file.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs for this repo live as GitHub issues at `alastairlundy/ModelsDotDevSharp`; use the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Triage labels use the canonical five strings (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`) — no overrides. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout: one `CONTEXT.md` and `docs/adr/` at the repo root (neither exists yet; skills will create them lazily). See `docs/agents/domain.md`.
