@@ -22,8 +22,6 @@
     SOFTWARE.
  */
 
-using System.Runtime.CompilerServices;
-
 namespace ModelsDotDevSharp.Abstractions;
 
 /// <summary>
@@ -49,10 +47,10 @@ public interface IModelInfoRepository
     Task<AIProviderInfo> GetProviderInfoByIdAsync(string providerId, CancellationToken cancellationToken = default);
     
     /// <summary>
-    /// 
+    /// Returns all provider infos. Returns an empty array if the response body is empty or deserializes to null.
     /// </summary>
-    /// <param name="cancellationToken"></param>
-    /// <returns></returns>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns>An array of provider infos.</returns>
     Task<AIProviderInfo[]> GetProviderInfosAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -60,5 +58,5 @@ public interface IModelInfoRepository
     /// </summary>
     /// <param name="cancellationToken"></param>
     /// <returns></returns>
-    IAsyncEnumerable<AIProviderInfo> EnumerateProviderInfosAsync([EnumeratorCancellation] CancellationToken cancellationToken = default);
+    IAsyncEnumerable<AIProviderInfo> EnumerateProviderInfosAsync(CancellationToken cancellationToken = default);
 }

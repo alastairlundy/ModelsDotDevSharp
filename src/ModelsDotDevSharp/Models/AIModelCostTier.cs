@@ -33,5 +33,5 @@ public record AIModelCostTier
     public decimal OutputCostPerMillionTokens { get; set; }
     
     [JsonPropertyName("tier")]
-    public AIModelTierInfo TierInfo { get; set; }
+    public AIModelTierInfo TierInfo { get; set; } = null!;
 }

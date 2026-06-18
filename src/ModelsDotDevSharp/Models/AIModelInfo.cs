@@ -27,13 +27,13 @@ namespace ModelsDotDevSharp;
 public record AIModelInfo
 {
     [JsonPropertyName("id")]
-    public string Id { get; set; }
+    public string Id { get; set; } = string.Empty;
 
     [JsonPropertyName("name")]
-    public string Name { get; set; } 
+    public string Name { get; set; } = string.Empty;
     
     [JsonPropertyName("family")]
-    public string Family { get; set; }
+    public string Family { get; set; } = string.Empty;
     
     [JsonPropertyName("attachment")]
     public bool SupportsFileAttachments { get; set; }
@@ -63,10 +63,10 @@ public record AIModelInfo
     public bool IsOpenWeight { get; set; }
     
     [JsonPropertyName("modalities")]
-    public AIModelModalities Modalities { get; set; }
+    public AIModelModalities? Modalities { get; set; } = null;
     
     [JsonPropertyName("cost")]
-    public AIModelCostInfo Cost { get; set; }
+    public AIModelCostInfo? Cost { get; set; } = null;
 
     [JsonPropertyName("status")]
     public AIModelStatus? Status { get; set; }

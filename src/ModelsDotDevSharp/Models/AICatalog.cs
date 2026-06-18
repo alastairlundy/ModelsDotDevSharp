@@ -27,8 +27,8 @@ namespace ModelsDotDevSharp;
 public record AICatalog
 {
     [JsonPropertyName("models")]
-    public Dictionary<string, AIModelMetadata> Models { get; set; }
+    public Dictionary<string, AIModelMetadata> Models { get; set; } = new();
 
     [JsonPropertyName("providers")]
-    public Dictionary<string, AIProviderInfo> Providers { get; set; }
+    public Dictionary<string, AIProviderInfo> Providers { get; set; } = new();
 }

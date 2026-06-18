@@ -35,10 +35,10 @@ public record AIModelMetadata
     public string? Id { get; set; }
 
     [JsonPropertyName("name")]
-    public string Name { get; set; }
+    public string Name { get; set; } = string.Empty;
 
     [JsonPropertyName("family")]
-    public string Family { get; set; }
+    public string Family { get; set; } = string.Empty;
 
     [JsonPropertyName("attachment")]
     public bool Attachment { get; set; }
@@ -68,10 +68,10 @@ public record AIModelMetadata
     public bool OpenWeights { get; set; }
 
     [JsonPropertyName("modalities")]
-    public AIModelModalities Modalities { get; set; }
+    public AIModelModalities Modalities { get; set; } = null!;
 
     [JsonPropertyName("limit")]
-    public AIModelLimit Limit { get; set; }
+    public AIModelLimit Limit { get; set; } = null!;
 
     [JsonPropertyName("weights")]
     public IReadOnlyList<AIModelWeightInfo>? Weights { get; set; }

@@ -27,7 +27,7 @@ namespace ModelsDotDevSharp;
 public record AIModelTierInfo
 {
     [JsonPropertyName("type")]
-    public string TierType  { get; set; }
+    public string TierType  { get; set; } = string.Empty;
     
     [JsonPropertyName("size")]
     public int ContextTokens { get; set; }

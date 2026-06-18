@@ -22,8 +22,6 @@
     SOFTWARE.
  */
 
-using System.Runtime.CompilerServices;
-
 namespace ModelsDotDevSharp.Abstractions;
 
 /// <summary>
@@ -45,5 +43,5 @@ public interface IModelMetadataRepository
     /// </summary>
     /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns>An async enumerable of model metadata.</returns>
-    IAsyncEnumerable<AIModelMetadata> EnumerateModelMetadataAsync([EnumeratorCancellation] CancellationToken cancellationToken = default);
+    IAsyncEnumerable<AIModelMetadata> EnumerateModelMetadataAsync(CancellationToken cancellationToken = default);
 }

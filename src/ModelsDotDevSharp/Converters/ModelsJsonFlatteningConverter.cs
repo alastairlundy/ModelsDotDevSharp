@@ -77,7 +77,7 @@ public sealed class ModelsJsonFlatteningConverter : JsonConverter<AIModelMetadat
         writer.WriteStartObject();
         foreach (var model in value)
         {
-            writer.WritePropertyName(model.Id);
+            writer.WritePropertyName(model.Id ?? string.Empty);
             JsonSerializer.Serialize(writer, model, ModelMetadataJsonContext.Default.AIModelMetadata);
         }
         writer.WriteEndObject();

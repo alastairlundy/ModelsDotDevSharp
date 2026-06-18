@@ -27,16 +27,16 @@ namespace ModelsDotDevSharp;
 public record AIModelBenchmark
 {
     [JsonPropertyName("name")]
-    public string Name { get; set; }
+    public string Name { get; set; } = string.Empty;
 
     [JsonPropertyName("score")]
     public double Score { get; set; }
 
     [JsonPropertyName("metric")]
-    public string Metric { get; set; }
+    public string Metric { get; set; } = string.Empty;
 
     [JsonPropertyName("source")]
-    public string Source { get; set; }
+    public string Source { get; set; } = string.Empty;
 
     [JsonPropertyName("harness")]
     public string? Harness { get; set; }
