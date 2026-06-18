@@ -24,7 +24,6 @@
 
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
-using Microsoft.Extensions.Options;
 
 namespace ModelsDotDevSharp;
 
@@ -123,8 +122,7 @@ public class ModelInfoRepository : IModelInfoRepository
     /// </summary>
     /// <param name="cancellationToken"></param>
     /// <returns></returns>
-    public async Task<AIProviderInfo[]> GetProviderInfosAsync(CancellationToken cancellationToken = default)
-    {
-        return await EnumerateProviderInfosAsync(cancellationToken).ToArrayAsync(cancellationToken);
-    }
+    public async Task<AIProviderInfo[]> GetProviderInfosAsync(CancellationToken cancellationToken = default) => 
+        await EnumerateProviderInfosAsync(cancellationToken)
+            .ToArrayAsync(cancellationToken);
 }

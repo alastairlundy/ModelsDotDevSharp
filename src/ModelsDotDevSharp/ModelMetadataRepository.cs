@@ -24,7 +24,6 @@
 
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
-using Microsoft.Extensions.Options;
 
 namespace ModelsDotDevSharp;
 

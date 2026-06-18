@@ -23,8 +23,6 @@
  */
 
 using System.Net.Http.Json;
-using Microsoft.Extensions.Options;
-using ModelsDotDevSharp.Converters;
 
 namespace ModelsDotDevSharp;
 
