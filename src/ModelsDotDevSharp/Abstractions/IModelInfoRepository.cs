@@ -1,4 +1,4 @@
-﻿/*
+/*
     MIT License
 
     Copyright (c) 2026 Alastair Lundy
@@ -22,12 +22,14 @@
     SOFTWARE.
  */
 
+using System.Runtime.CompilerServices;
+
 namespace ModelsDotDevSharp.Abstractions;
 
 /// <summary>
 /// Provides an abstraction for retrieving information about AI models and their providers.
 /// </summary>
-public interface IModelInfoProvider
+public interface IModelInfoRepository
 {
     /// <summary>
     /// 
@@ -58,5 +60,5 @@ public interface IModelInfoProvider
     /// </summary>
     /// <param name="cancellationToken"></param>
     /// <returns></returns>
-    IAsyncEnumerable<AIProviderInfo> EnumerateProviderInfosAsync(CancellationToken cancellationToken = default);
+    IAsyncEnumerable<AIProviderInfo> EnumerateProviderInfosAsync([EnumeratorCancellation] CancellationToken cancellationToken = default);
 }
