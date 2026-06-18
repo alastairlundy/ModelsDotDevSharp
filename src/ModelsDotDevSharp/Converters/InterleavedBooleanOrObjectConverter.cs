@@ -100,7 +100,7 @@ public sealed class InterleavedBooleanOrObjectConverter : JsonConverter<AIModelI
 
         writer.WriteStartObject();
         writer.WritePropertyName("field");
-        writer.WriteStringValue(GetFieldString(value.Field));
+        writer.WriteStringValue(GetFieldString(value.Field!.Value));
         writer.WriteEndObject();
     }
 

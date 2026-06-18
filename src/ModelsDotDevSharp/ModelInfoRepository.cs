@@ -1,4 +1,4 @@
-﻿/*
+/*
     MIT License
 
     Copyright (c) 2026 Alastair Lundy
@@ -24,27 +24,29 @@
 
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
+using Microsoft.Extensions.Options;
 
 namespace ModelsDotDevSharp;
 
 /// <summary>
 /// 
 /// </summary>
-public class ModelInfoProvider : IModelInfoProvider
+public class ModelInfoRepository : IModelInfoRepository
 {
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IOptions<ModelsDevOptions> _options;
 
-    private const string ModelsDotDevBaseAddress = "https://models.dev";
-    
     /// <summary>
     /// 
     /// </summary>
     /// <param name="httpClientFactory"></param>
-    public ModelInfoProvider(IHttpClientFactory httpClientFactory)
+    /// <param name="options"></param>
+    public ModelInfoRepository(IHttpClientFactory httpClientFactory, IOptions<ModelsDevOptions> options)
     {
         _httpClientFactory = httpClientFactory;
+        _options = options;
     }
-    
+
     /// <summary>
     /// 
     /// </summary>
@@ -58,7 +60,7 @@ public class ModelInfoProvider : IModelInfoProvider
     {
         ArgumentNullException.ThrowIfNull(modelId);
         ArgumentNullException.ThrowIfNull(providerId);
-        
+
         AIProviderInfo provider = await GetProviderInfoByIdAsync(providerId, cancellationToken);
 
         try
@@ -82,7 +84,7 @@ public class ModelInfoProvider : IModelInfoProvider
     public async Task<AIProviderInfo> GetProviderInfoByIdAsync(string providerId, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(providerId);
-        
+
         try
         {
             return await EnumerateProviderInfosAsync(cancellationToken).FirstAsync(p => p.Id == providerId, cancellationToken);
@@ -93,16 +95,21 @@ public class ModelInfoProvider : IModelInfoProvider
         }
     }
 
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
     public async IAsyncEnumerable<AIProviderInfo> EnumerateProviderInfosAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         HttpClient client = _httpClientFactory.CreateClient();
-        client.BaseAddress = new Uri(ModelsDotDevBaseAddress);
+        client.BaseAddress = new Uri(_options.Value.BaseAddress);
 
         HttpResponseMessage response = await client.GetAsync("/api.json", cancellationToken);
 
-        IAsyncEnumerable<AIProviderInfo?> providers = response.Content.ReadFromJsonAsAsyncEnumerable(AIProviderJsonContext.Default.AIProviderInfo,
-            cancellationToken);
+        IAsyncEnumerable<AIProviderInfo?> providers = response.Content.ReadFromJsonAsAsyncEnumerable(
+            ModelInfoJsonContext.Default.AIProviderInfo, cancellationToken);
 
         await foreach (AIProviderInfo? provider in providers)
         {
@@ -110,25 +117,14 @@ public class ModelInfoProvider : IModelInfoProvider
                 yield return provider;
         }
     }
-    
+
     /// <summary>
-    /// 
+    /// Returns all provider infos. Returns an empty array if the response body is empty or deserializes to null.
     /// </summary>
     /// <param name="cancellationToken"></param>
     /// <returns></returns>
-    /// <exception cref="Exception"></exception>
     public async Task<AIProviderInfo[]> GetProviderInfosAsync(CancellationToken cancellationToken = default)
     {
-        HttpClient client = _httpClientFactory.CreateClient();
-        client.BaseAddress = new Uri(ModelsDotDevBaseAddress);
-
-        HttpResponseMessage response = await client.GetAsync("/api.json", cancellationToken);
-
-        AIProviderInfo[]? providers = await response.Content.ReadFromJsonAsync(AIProviderArrayJsonContext.Default.AIProviderInfoArray, cancellationToken);
-
-        if (providers is not null)
-            return providers;
-
-        throw new Exception("Could not connect to the ModelDotDev API");
+        return await EnumerateProviderInfosAsync(cancellationToken).ToArrayAsync(cancellationToken);
     }
 }

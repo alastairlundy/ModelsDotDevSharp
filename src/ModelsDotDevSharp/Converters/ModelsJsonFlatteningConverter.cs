@@ -61,7 +61,7 @@ public sealed class ModelsJsonFlatteningConverter : JsonConverter<AIModelMetadat
             }
 
             // Use the source-gen context for AOT safety
-            var metadata = JsonSerializer.Deserialize(ref reader, ModelMetadataJsonContext.Default.AIModelMetadata, options);
+            AIModelMetadata? metadata = JsonSerializer.Deserialize(ref reader, ModelMetadataJsonContext.Default.AIModelMetadata);
             if (metadata != null)
             {
                 metadata.Id = modelId;
@@ -78,7 +78,7 @@ public sealed class ModelsJsonFlatteningConverter : JsonConverter<AIModelMetadat
         foreach (var model in value)
         {
             writer.WritePropertyName(model.Id);
-            JsonSerializer.Serialize(writer, model, options);
+            JsonSerializer.Serialize(writer, model, ModelMetadataJsonContext.Default.AIModelMetadata);
         }
         writer.WriteEndObject();
     }
