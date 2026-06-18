@@ -3,6 +3,8 @@ Easily access [models.dev](https://models.dev)'s AI model, pricing, and provider
 
 ## Requirements
 
+- .NET 10
+
 ## Installation
 
 ```bash
@@ -19,6 +21,47 @@ Or with a `PackageReference`:
 
 Use the latest version available on NuGet.
 
+## Quick start
+
+`ModelInfoProvider` depends on `IHttpClientFactory`. Register it with `AddHttpClient`, which also wires up the factory:
+
+```csharp
+using ModelsDotDevSharp;
+using ModelsDotDevSharp.Abstractions;
+
+builder.Services.AddHttpClient<IModelInfoProvider, ModelInfoProvider>();
+```
+
+Resolve and use it:
+
+```csharp
+IModelInfoProvider provider = serviceProvider.GetRequiredService<IModelInfoProvider>();
+
+AIProviderInfo[] providers = await provider.GetProviderInfosAsync();
+AIProviderInfo oneProvider = await provider.GetProviderInfoByIdAsync("provider-id");
+AIModelInfo oneModel = await provider.GetModelInfoByIdAsync("provider-id", "model-id");
+
+await foreach (AIProviderInfo p in provider.EnumerateProviderInfosAsync())
+{
+    // stream as it arrives
+}
+```
+
+All four methods accept an optional `CancellationToken` as their last parameter.
+
+## Public model types
+
+In the `ModelsDotDevSharp` namespace, as `record` types bound to models.dev's JSON via `[JsonPropertyName]`:
+
+- `AIProviderInfo` — a provider: id, name, npm package id, documentation/API URLs, environment variables, and the models it exposes.
+- `AIModelInfo` — a single model: id, name, family, capabilities, release/knowledge/last-updated dates, modalities, and cost.
+- `AIModelCostInfo` — per-million-token pricing for input, output, audio in/out, cache reads, cache writes, and tiered pricing.
+- `AIModelCostTier` — a single tiered-price entry.
+- `AIModelTierInfo` — metadata for a cost tier.
+- `AIModelLimit` — context, input, and output token limits.
+- `AIModelModalities` — input and output modality strings.
+
+The public abstraction is `IModelInfoProvider` (`ModelsDotDevSharp.Abstractions`); the implementation is `ModelInfoProvider`.
 
 ## AOT and trimming
 
