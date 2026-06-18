@@ -1,4 +1,4 @@
-﻿/*
+/*
     MIT License
 
     Copyright (c) 2026 Alastair Lundy
@@ -24,8 +24,15 @@
 
 namespace ModelsDotDevSharp.Contexts;
 
-[JsonSerializable(typeof(AIProviderInfo[]))]
-public partial class AIProviderArrayJsonContext : JsonSerializerContext
+using ModelsDotDevSharp.Converters;
+
+[JsonSerializable(typeof(AIModelMetadata))]
+[JsonSerializable(typeof(AIModelMetadata[]))]
+[JsonSerializable(typeof(AIModelWeightInfo))]
+[JsonSerializable(typeof(AIModelBenchmark))]
+[JsonSerializable(typeof(AIModelLimit))]
+[JsonSerializable(typeof(AIModelModalities))]
+[JsonSourceGenerationOptions(Converters = [typeof(FlexibleDateOnlyConverter), typeof(ModelsJsonFlatteningConverter)])]
+public partial class ModelMetadataJsonContext : JsonSerializerContext
 {
-   
 }

@@ -1,4 +1,4 @@
-﻿/*
+/*
     MIT License
 
     Copyright (c) 2026 Alastair Lundy
@@ -24,8 +24,24 @@
 
 namespace ModelsDotDevSharp.Contexts;
 
+using ModelsDotDevSharp.Converters;
+
+[JsonSerializable(typeof(AICatalog))]
+[JsonSerializable(typeof(AIModelMetadata))]
 [JsonSerializable(typeof(AIProviderInfo))]
-public partial class AIProviderJsonContext : JsonSerializerContext
+[JsonSerializable(typeof(AIProviderInfo[]))]
+[JsonSerializable(typeof(AIModelInfo))]
+[JsonSerializable(typeof(AIModelCostInfo))]
+[JsonSerializable(typeof(AIModelModalities))]
+[JsonSerializable(typeof(AIModelLimit))]
+[JsonSerializable(typeof(AIModelCostTier))]
+[JsonSerializable(typeof(AIModelTierInfo))]
+[JsonSerializable(typeof(AIModelStatus))]
+[JsonSerializable(typeof(AIModelReasoningOption))]
+[JsonSerializable(typeof(AIModelInterleaved))]
+[JsonSerializable(typeof(AIModelExperimental))]
+[JsonSerializable(typeof(AIModelProviderOverride))]
+[JsonSourceGenerationOptions(Converters = [typeof(FlexibleDateOnlyConverter), typeof(InterleavedBooleanOrObjectConverter)])]
+public partial class CatalogJsonContext : JsonSerializerContext
 {
-    
 }
