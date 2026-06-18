@@ -23,18 +23,33 @@
  */
 
 using Microsoft.Extensions.DependencyInjection;
-using ModelsDotDevSharp.Abstractions;
 
 namespace ModelsDotDevSharp;
 
 public static class ModelsDevServiceCollectionExtensions
 {
-    public static IServiceCollection AddModelsDev(this IServiceCollection services, Action<ModelsDevOptions> configureOptions)
+    extension(IServiceCollection services)
     {
-        services.Configure(configureOptions);
-        services.AddSingleton<IModelInfoRepository, ModelInfoRepository>();
-        services.AddSingleton<IModelMetadataRepository, ModelMetadataRepository>();
-        services.AddSingleton<ICatalogRepository, CatalogRepository>();
-        return services;
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <returns></returns>
+        public IServiceCollection AddModelsDotDevSharp() => 
+            services.AddModelsDotDevSharp(config 
+                => config.BaseAddress = "https://models.dev/");
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="configureOptions"></param>
+        /// <returns></returns>
+        public IServiceCollection AddModelsDotDevSharp(Action<ModelsDevOptions> configureOptions)
+        {
+            services.Configure(configureOptions);
+            services.AddSingleton<IModelInfoRepository, ModelInfoRepository>();
+            services.AddSingleton<IModelMetadataRepository, ModelMetadataRepository>();
+            services.AddSingleton<ICatalogRepository, CatalogRepository>();
+            return services;
+        }
     }
 }
