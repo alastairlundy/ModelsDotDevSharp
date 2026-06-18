@@ -46,4 +46,10 @@ public record AIModelCostInfo
 
     [JsonPropertyName("tiers")] 
     public AIModelCostTier[] Tiers { get; set; } = [];
+
+    public Dictionary<string, AIModelCostInfo> ContextOverrides { get; set; } = new();
+
+    [JsonExtensionData]
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public Dictionary<string, System.Text.Json.JsonElement>? ContextOverridesRaw { get; set; }
 }

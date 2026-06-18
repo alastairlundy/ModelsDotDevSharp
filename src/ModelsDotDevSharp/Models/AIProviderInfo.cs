@@ -49,4 +49,7 @@ public record AIProviderInfo
 
     [JsonPropertyName("models")]
     public AIModelInfo[] Models { get; set; } = [];
+
+    [JsonIgnore]
+    public string LogoUrl => $"https://models.dev/logos/{Id}.svg";
 }

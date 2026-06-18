@@ -51,13 +51,13 @@ public record AIModelInfo
     public bool SupportsToolCalling { get; set; }
     
     [JsonPropertyName("knowledge")]
-    public DateOnly KnowledgeCutOffDate { get; set; }
+    public DateOnly? Knowledge { get; set; }
     
     [JsonPropertyName("release_date")]
-    public DateOnly ReleaseDate { get; set; }
+    public DateOnly? ReleaseDate { get; set; }
     
     [JsonPropertyName("last_updated")]
-    public DateOnly LastUpdatedDate { get; set; }
+    public DateOnly? LastUpdatedDate { get; set; }
     
     [JsonPropertyName("open_weights")]
     public bool IsOpenWeight { get; set; }
@@ -67,4 +67,28 @@ public record AIModelInfo
     
     [JsonPropertyName("cost")]
     public AIModelCostInfo Cost { get; set; }
+
+    [JsonPropertyName("status")]
+    public AIModelStatus? Status { get; set; }
+
+    [JsonPropertyName("reasoning_options")]
+    public Dictionary<string, AIModelReasoningOption>? ReasoningOptions { get; set; }
+
+    [JsonPropertyName("interleaved")]
+    public AIModelInterleaved? Interleaved { get; set; }
+
+    [JsonPropertyName("modes")]
+    public Dictionary<string, AIModelCostInfo>? Modes { get; set; }
+
+    [JsonPropertyName("experimental")]
+    public AIModelExperimental? Experimental { get; set; }
+
+    [JsonPropertyName("headers")]
+    public Dictionary<string, string>? Headers { get; set; }
+
+    [JsonPropertyName("body")]
+    public Dictionary<string, System.Text.Json.JsonElement>? Body { get; set; }
+
+    [JsonPropertyName("provider")]
+    public AIModelProviderOverride? ProviderOverride { get; set; }
 }

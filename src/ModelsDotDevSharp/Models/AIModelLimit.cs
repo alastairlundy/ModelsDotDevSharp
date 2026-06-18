@@ -30,7 +30,7 @@ public record AIModelLimit
     public int ContextTokens { get; set; }
     
     [JsonPropertyName("input")]
-    public int InputTokens { get; set; }
+    public int? InputTokens { get; set; }
     
     [JsonPropertyName("output")]
     public int OutputTokens { get; set; }

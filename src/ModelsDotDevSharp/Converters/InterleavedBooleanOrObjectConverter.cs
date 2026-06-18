@@ -26,7 +26,7 @@ namespace ModelsDotDevSharp.Converters;
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using ModelsDotDevSharp.Models;
+using ModelsDotDevSharp;
 
 public sealed class InterleavedBooleanOrObjectConverter : JsonConverter<AIModelInterleaved?>
 {
