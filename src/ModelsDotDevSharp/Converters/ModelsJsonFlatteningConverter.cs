@@ -27,7 +27,7 @@ namespace ModelsDotDevSharp.Converters;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using ModelsDotDevSharp.Contexts;
+using Contexts;
 
 public sealed class ModelsJsonFlatteningConverter : JsonConverter<AIModelMetadata[]>
 {

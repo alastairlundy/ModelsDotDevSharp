@@ -24,7 +24,7 @@
 
 namespace ModelsDotDevSharp.Contexts;
 
-using ModelsDotDevSharp.Converters;
+using Converters;
 
 [JsonSerializable(typeof(AIProviderInfo))]
 [JsonSerializable(typeof(AIProviderInfo[]))]

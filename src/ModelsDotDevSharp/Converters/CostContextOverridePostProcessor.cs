@@ -25,7 +25,7 @@
 namespace ModelsDotDevSharp.Converters;
 
 using System.Text.Json;
-using ModelsDotDevSharp.Contexts;
+using Contexts;
 
 public static class CostContextOverridePostProcessor
 {

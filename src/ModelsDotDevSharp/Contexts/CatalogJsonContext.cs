@@ -24,7 +24,7 @@
 
 namespace ModelsDotDevSharp.Contexts;
 
-using ModelsDotDevSharp.Converters;
+using Converters;
 
 [JsonSerializable(typeof(AICatalog))]
 [JsonSerializable(typeof(AIModelMetadata))]
