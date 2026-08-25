@@ -14,6 +14,10 @@
         <Authors>Alastair Lundy</Authors>
         <Copyright>Copyright (c) Alastair Lundy 2026</Copyright>
         <RepositoryType>git</RepositoryType>
+        <RepositoryUrl>https://github.com/alastairlundy/ModelsDotDevDotnet</RepositoryUrl>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <Version>0.1.0</Version>
+        <Description>A .NET client wrapper for the models.dev API.</Description>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
         <Product>ModelsDotDevSharp</Product>
@@ -24,6 +28,7 @@
       <PackageReference Include="Microsoft.Extensions.Http" />
       <PackageReference Include="Microsoft.Extensions.Options" />
 
+      <None Include="..\..\README.md" Pack="true" PackagePath="\" />
     </ItemGroup>
 
 </Project>
