@@ -29,6 +29,7 @@ using Converters;
 [JsonSerializable(typeof(AIProviderInfo))]
 [JsonSerializable(typeof(AIProviderInfo[]))]
 [JsonSerializable(typeof(AIModelInfo))]
+[JsonSerializable(typeof(AIModelInfo[]))]
 [JsonSerializable(typeof(AIModelCostInfo))]
 [JsonSerializable(typeof(AIModelModalities))]
 [JsonSerializable(typeof(AIModelLimit))]
@@ -39,7 +40,7 @@ using Converters;
 [JsonSerializable(typeof(AIModelInterleaved))]
 [JsonSerializable(typeof(AIModelExperimental))]
 [JsonSerializable(typeof(AIModelProviderOverride))]
-[JsonSourceGenerationOptions(Converters = [typeof(FlexibleDateOnlyConverter), typeof(InterleavedBooleanOrObjectConverter), typeof(AIProviderInfoArrayFlatteningConverter)])]
+[JsonSourceGenerationOptions(Converters = [typeof(FlexibleDateOnlyConverter), typeof(InterleavedBooleanOrObjectConverter), typeof(AIProviderInfoArrayFlatteningConverter), typeof(AIModelInfoArrayFlatteningConverter)])]
 public partial class ModelInfoJsonContext : JsonSerializerContext
 {
 }
