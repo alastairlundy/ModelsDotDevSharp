@@ -75,7 +75,7 @@ public record AIModelInfo
     public AIModelStatus? Status { get; set; }
 
     [JsonPropertyName("reasoning_options")]
-    public Dictionary<string, AIModelReasoningOption>? ReasoningOptions { get; set; }
+    public AIModelReasoningOption[]? ReasoningOptions { get; set; }
 
     [JsonPropertyName("interleaved")]
     public AIModelInterleaved? Interleaved { get; set; }
