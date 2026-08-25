@@ -1,0 +1,21 @@
+name: Test and Build
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+
+      - name: Build
+        run: dotnet build src/ModelsDotDevSharp.slnx
+
+      - name: Test
+        run: dotnet test --solution src/ModelsDotDevSharp.slnx
