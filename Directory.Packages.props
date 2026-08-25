@@ -1,0 +1,5 @@
+<Project>
+  <!-- Central Package Management lives in src/Directory.Packages.props; import it so
+       projects outside src/ (e.g. tests/) also resolve package versions. -->
+  <Import Project="$(MSBuildThisFileDirectory)src\Directory.Packages.props" />
+</Project>
