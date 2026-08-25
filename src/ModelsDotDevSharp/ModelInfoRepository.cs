@@ -107,13 +107,16 @@ public class ModelInfoRepository : IModelInfoRepository
 
         HttpResponseMessage response = await client.GetAsync("/api.json", cancellationToken);
 
-        IAsyncEnumerable<AIProviderInfo?> providers = response.Content.ReadFromJsonAsAsyncEnumerable(
-            ModelInfoJsonContext.Default.AIProviderInfo, cancellationToken);
+        AIProviderInfo[]? providers = await response.Content.ReadFromJsonAsync(
+            ModelInfoJsonContext.Default.AIProviderInfoArray, cancellationToken);
 
-        await foreach (AIProviderInfo? provider in providers)
+        if (providers is not null)
         {
-            if (provider is not null)
-                yield return provider;
+            foreach (AIProviderInfo provider in providers)
+            {
+                if (provider is not null)
+                    yield return provider;
+            }
         }
     }
 

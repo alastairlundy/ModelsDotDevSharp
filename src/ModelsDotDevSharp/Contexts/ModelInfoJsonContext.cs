@@ -39,7 +39,7 @@ using Converters;
 [JsonSerializable(typeof(AIModelInterleaved))]
 [JsonSerializable(typeof(AIModelExperimental))]
 [JsonSerializable(typeof(AIModelProviderOverride))]
-[JsonSourceGenerationOptions(Converters = [typeof(FlexibleDateOnlyConverter), typeof(InterleavedBooleanOrObjectConverter)])]
+[JsonSourceGenerationOptions(Converters = [typeof(FlexibleDateOnlyConverter), typeof(InterleavedBooleanOrObjectConverter), typeof(AIProviderInfoArrayFlatteningConverter)])]
 public partial class ModelInfoJsonContext : JsonSerializerContext
 {
 }
