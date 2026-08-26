@@ -1,5 +1,8 @@
 # ModelsDotDevSharp
 
+[![NuGet Version](https://img.shields.io/nuget/v/ModelsDotDevSharp.svg)](https://www.nuget.org/packages/ModelsDotDevSharp/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A .NET wrapper around the public [models.dev](https://models.dev) API, providing strongly-typed access to AI provider and model metadata.
 
 ## Install
