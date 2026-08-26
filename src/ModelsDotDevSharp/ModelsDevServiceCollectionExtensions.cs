@@ -31,18 +31,18 @@ public static class ModelsDevServiceCollectionExtensions
     extension(IServiceCollection services)
     {
         /// <summary>
-        /// 
+        /// Registers the ModelsDotDevSharp repositories with the default base address (<c>https://models.dev/</c>).
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The same <see cref="IServiceCollection"/> so calls can be chained.</returns>
         public IServiceCollection AddModelsDotDevSharp() => 
             services.AddModelsDotDevSharp(config 
                 => config.BaseAddress = "https://models.dev/");
 
         /// <summary>
-        /// 
+        /// Registers the ModelsDotDevSharp repositories and applies the supplied options configuration.
         /// </summary>
-        /// <param name="configureOptions"></param>
-        /// <returns></returns>
+        /// <param name="configureOptions">A callback that sets <see cref="ModelsDevOptions"/> values, such as <see cref="ModelsDevOptions.BaseAddress"/>.</param>
+        /// <returns>The same <see cref="IServiceCollection"/> so calls can be chained.</returns>
         public IServiceCollection AddModelsDotDevSharp(Action<ModelsDevOptions> configureOptions)
         {
             services.Configure(configureOptions);

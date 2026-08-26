@@ -28,7 +28,7 @@ using System.Runtime.CompilerServices;
 namespace ModelsDotDevSharp;
 
 /// <summary>
-/// 
+/// HTTP-backed implementation of <see cref="IModelInfoRepository"/>.
 /// </summary>
 public class ModelInfoRepository : IModelInfoRepository
 {
@@ -36,10 +36,10 @@ public class ModelInfoRepository : IModelInfoRepository
     private readonly IOptions<ModelsDevOptions> _options;
 
     /// <summary>
-    /// 
+    /// Creates a new <see cref="ModelInfoRepository"/>.
     /// </summary>
-    /// <param name="httpClientFactory"></param>
-    /// <param name="options"></param>
+    /// <param name="httpClientFactory">The factory used to create HTTP clients.</param>
+    /// <param name="options">The configured <see cref="ModelsDevOptions"/>.</param>
     public ModelInfoRepository(IHttpClientFactory httpClientFactory, IOptions<ModelsDevOptions> options)
     {
         _httpClientFactory = httpClientFactory;
@@ -47,14 +47,14 @@ public class ModelInfoRepository : IModelInfoRepository
     }
 
     /// <summary>
-    /// 
+    /// Gets a single model's information by its provider and model identifiers.
     /// </summary>
-    /// <param name="providerId"></param>
-    /// <param name="modelId"></param>
-    /// <param name="cancellationToken"></param>
-    /// <returns></returns>
-    /// <exception cref="ArgumentNullException"></exception>
-    /// <exception cref="ArgumentException"></exception>
+    /// <param name="providerId">The provider identifier, e.g. <c>"openai"</c>.</param>
+    /// <param name="modelId">The model identifier, e.g. <c>"gpt-5.6-sol"</c>.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns>The matching model information.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="providerId"/> or <paramref name="modelId"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">No model with the given identifiers exists.</exception>
     public async Task<AIModelInfo> GetModelInfoByIdAsync(string providerId, string modelId, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(modelId);
@@ -73,13 +73,13 @@ public class ModelInfoRepository : IModelInfoRepository
     }
 
     /// <summary>
-    /// 
+    /// Gets a single provider's information by its identifier.
     /// </summary>
-    /// <param name="providerId"></param>
-    /// <param name="cancellationToken"></param>
-    /// <returns></returns>
-    /// <exception cref="ArgumentNullException"></exception>
-    /// <exception cref="ArgumentException"></exception>
+    /// <param name="providerId">The provider identifier, e.g. <c>"openai"</c>.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns>The matching provider information.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="providerId"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">No provider with the given identifier exists.</exception>
     public async Task<AIProviderInfo> GetProviderInfoByIdAsync(string providerId, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(providerId);
@@ -95,10 +95,10 @@ public class ModelInfoRepository : IModelInfoRepository
     }
 
     /// <summary>
-    /// 
+    /// Enumerates all available provider information, one provider at a time.
     /// </summary>
-    /// <param name="cancellationToken"></param>
-    /// <returns></returns>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns>An async enumerable of provider information.</returns>
     public async IAsyncEnumerable<AIProviderInfo> EnumerateProviderInfosAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
@@ -123,8 +123,8 @@ public class ModelInfoRepository : IModelInfoRepository
     /// <summary>
     /// Returns all provider infos. Returns an empty array if the response body is empty or deserializes to null.
     /// </summary>
-    /// <param name="cancellationToken"></param>
-    /// <returns></returns>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns>An array of provider infos.</returns>
     public async Task<AIProviderInfo[]> GetProviderInfosAsync(CancellationToken cancellationToken = default) => 
         await EnumerateProviderInfosAsync(cancellationToken)
             .ToArrayAsync(cancellationToken);

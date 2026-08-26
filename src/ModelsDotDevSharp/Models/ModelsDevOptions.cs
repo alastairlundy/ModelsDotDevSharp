@@ -25,9 +25,12 @@
 namespace ModelsDotDevSharp;
 
 /// <summary>
-/// Options for <see cref="ModelsDotDevSharp"/>; configure via <c>AddModelsDev(opts => ...)</c>.
+/// Configuration options for the ModelsDotDevSharp client. Set them through <c>AddModelsDotDevSharp(opts => ...)</c>.
 /// </summary>
 public class ModelsDevOptions
 {
+    /// <summary>
+    /// The base address of the models.dev API. Defaults to <c>https://models.dev</c>.
+    /// </summary>
     public string BaseAddress { get; set; } = "https://models.dev";
 }

@@ -32,7 +32,7 @@ public interface IModelMetadataRepository
     /// <summary>
     /// Gets a single model's metadata by its composite <paramref name="id"/> in the form <c>"{provider}/{model}"</c>.
     /// </summary>
-    /// <param name="id">The composite model identifier, e.g. <c>"openai/gpt-4o"</c>.</param>
+    /// <param name="id">The composite model identifier, e.g. <c>"openai/gpt-5.6-sol"</c>.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns>The matching model metadata.</returns>
     Task<AIModelMetadata> GetModelMetadataAsync(string id, CancellationToken cancellationToken = default);

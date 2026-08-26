@@ -26,17 +26,31 @@ using System.Net.Http.Json;
 
 namespace ModelsDotDevSharp;
 
+/// <summary>
+/// HTTP-backed implementation of <see cref="ICatalogRepository"/>.
+/// </summary>
 public class CatalogRepository : ICatalogRepository
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IOptions<ModelsDevOptions> _options;
 
+    /// <summary>
+    /// Creates a new <see cref="CatalogRepository"/>.
+    /// </summary>
+    /// <param name="httpClientFactory">The factory used to create HTTP clients.</param>
+    /// <param name="options">The configured <see cref="ModelsDevOptions"/>.</param>
     public CatalogRepository(IHttpClientFactory httpClientFactory, IOptions<ModelsDevOptions> options)
     {
         _httpClientFactory = httpClientFactory;
         _options = options;
     }
 
+    /// <summary>
+    /// Gets the full catalog of models and providers, with cost context overrides resolved.
+    /// </summary>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns>The AI catalog.</returns>
+    /// <exception cref="Exception">The catalog could not be retrieved or deserialized.</exception>
     public async Task<AICatalog> GetCatalogAsync(CancellationToken cancellationToken = default)
     {
         HttpClient client = _httpClientFactory.CreateClient();
