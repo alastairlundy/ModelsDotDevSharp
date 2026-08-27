@@ -19,7 +19,7 @@
         <RepositoryType>git</RepositoryType>
         <RepositoryUrl>https://github.com/alastairlundy/ModelsDotDevSharp</RepositoryUrl>
         <PackageReadmeFile>README.md</PackageReadmeFile>
-        <Version>0.1.0</Version>
+        <PackageVersion>0.1.0</PackageVersion>
         <Description>A .NET client wrapper for the models.dev API.</Description>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
