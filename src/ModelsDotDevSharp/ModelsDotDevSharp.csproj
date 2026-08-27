@@ -8,19 +8,24 @@
         <IsTrimmable>true</IsTrimmable>
         <EnableAoTAnalyzer>true</EnableAoTAnalyzer>
         <PublishTrimmed>true</PublishTrimmed>
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
         <PackageId>ModelsDotDevSharp</PackageId>
         <Title>ModelsDotDevSharp</Title>
         <Authors>Alastair Lundy</Authors>
         <Copyright>Copyright (c) Alastair Lundy 2026</Copyright>
         <RepositoryType>git</RepositoryType>
-        <RepositoryUrl>https://github.com/alastairlundy/ModelsDotDevDotnet</RepositoryUrl>
+        <RepositoryUrl>https://github.com/alastairlundy/ModelsDotDevSharp</RepositoryUrl>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <Version>0.1.0</Version>
         <Description>A .NET client wrapper for the models.dev API.</Description>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
         <Product>ModelsDotDevSharp</Product>
+        <PackageTags>models.dev, LLMs, AI, models-dot-dev, models</PackageTags>
+        <PackageReleaseNotes>Initial Release</PackageReleaseNotes>
     </PropertyGroup>
 
     <ItemGroup>

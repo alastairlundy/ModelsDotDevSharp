@@ -24,7 +24,7 @@
 
 using Microsoft.Extensions.DependencyInjection;
 
-namespace ModelsDotDevSharp;
+namespace ModelsDotDevSharp.Extensions;
 
 public static class ModelsDevServiceCollectionExtensions
 {

@@ -1,3 +1,4 @@
+using ModelsDotDevSharp.Extensions;
 using TUnit.Assertions;
 using TUnit.Core;
 
@@ -8,7 +9,7 @@ public class SmokeTests
     [Test]
     public async Task LibraryTypeIsResolvable()
     {
-        var provider = typeof(ModelsDotDevSharp.ModelsDevServiceCollectionExtensions);
+        var provider = typeof(ModelsDevServiceCollectionExtensions);
         await Assert.That(provider).IsNotNull();
     }
 }
