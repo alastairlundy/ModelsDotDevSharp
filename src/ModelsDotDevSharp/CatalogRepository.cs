@@ -94,11 +94,20 @@ public class CatalogRepository : ICatalogRepository
 
     private static void ProcessAllCosts(AIModelCostInfo cost)
     {
-        CostContextOverridePostProcessor.Process(cost, CatalogJsonContext.Default.Options);
+        // Iterative pre-order DFS to avoid unbounded recursion / StackOverflowException
+        // on deeply nested ContextOverrides trees.
+        var stack = new Stack<AIModelCostInfo>();
+        stack.Push(cost);
 
-        foreach (AIModelCostInfo contextOverride in cost.ContextOverrides.Values)
+        while (stack.Count > 0)
         {
-            ProcessAllCosts(contextOverride);
+            AIModelCostInfo current = stack.Pop();
+            CostContextOverridePostProcessor.Process(current, CatalogJsonContext.Default.Options);
+
+            foreach (AIModelCostInfo contextOverride in current.ContextOverrides.Values)
+            {
+                stack.Push(contextOverride);
+            }
         }
     }
 }
