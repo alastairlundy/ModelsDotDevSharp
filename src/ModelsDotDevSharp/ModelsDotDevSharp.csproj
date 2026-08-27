@@ -33,7 +33,9 @@
       <PackageReference Include="Microsoft.Extensions.Http" />
       <PackageReference Include="Microsoft.Extensions.Options" />
 
-      <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+      <Content Include="..\..\README.md" Pack="true">
+        <PackagePath>README.md</PackagePath>
+        </Content>
     </ItemGroup>
 
 </Project>
