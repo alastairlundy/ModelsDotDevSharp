@@ -102,10 +102,10 @@ public class ModelInfoRepository : IModelInfoRepository
     public async IAsyncEnumerable<AIProviderInfo> EnumerateProviderInfosAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        HttpClient client = _httpClientFactory.CreateClient();
-        client.BaseAddress = new Uri(_options.Value.BaseAddress);
+        HttpClient client = HttpClientHelper.CreateClient(_httpClientFactory, _options.Value);
 
-        HttpResponseMessage response = await client.GetAsync("/api.json", cancellationToken);
+        using HttpResponseMessage response = await client.GetAsync("/api.json", cancellationToken);
+        response.EnsureSuccessStatusCode();
 
         AIProviderInfo[]? providers = await response.Content.ReadFromJsonAsync(
             ModelInfoJsonContext.Default.AIProviderInfoArray, cancellationToken);

@@ -45,6 +45,7 @@ public static class ModelsDevServiceCollectionExtensions
         /// <returns>The same <see cref="IServiceCollection"/> so calls can be chained.</returns>
         public IServiceCollection AddModelsDotDevSharp(Action<ModelsDevOptions> configureOptions)
         {
+            services.AddHttpClient();
             services.Configure(configureOptions);
             services.AddSingleton<IModelInfoRepository, ModelInfoRepository>();
             services.AddSingleton<IModelMetadataRepository, ModelMetadataRepository>();

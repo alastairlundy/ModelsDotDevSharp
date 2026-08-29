@@ -54,10 +54,10 @@ public class ModelMetadataRepository : IModelMetadataRepository
     public async IAsyncEnumerable<AIModelMetadata> EnumerateModelMetadataAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        HttpClient client = _httpClientFactory.CreateClient();
-        client.BaseAddress = new Uri(_options.Value.BaseAddress);
+        HttpClient client = HttpClientHelper.CreateClient(_httpClientFactory, _options.Value);
 
-        HttpResponseMessage response = await client.GetAsync("/models.json", cancellationToken);
+        using HttpResponseMessage response = await client.GetAsync("/models.json", cancellationToken);
+        response.EnsureSuccessStatusCode();
 
         AIModelMetadata[]? models = await response.Content.ReadFromJsonAsync(
             ModelMetadataJsonContext.Default.AIModelMetadataArray, cancellationToken);

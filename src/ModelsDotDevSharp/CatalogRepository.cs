@@ -53,10 +53,10 @@ public class CatalogRepository : ICatalogRepository
     /// <exception cref="Exception">The catalog could not be retrieved or deserialized.</exception>
     public async Task<AICatalog> GetCatalogAsync(CancellationToken cancellationToken = default)
     {
-        HttpClient client = _httpClientFactory.CreateClient();
-        client.BaseAddress = new Uri(_options.Value.BaseAddress);
+        HttpClient client = HttpClientHelper.CreateClient(_httpClientFactory, _options.Value);
 
-        HttpResponseMessage response = await client.GetAsync("/catalog.json", cancellationToken);
+        using HttpResponseMessage response = await client.GetAsync("/catalog.json", cancellationToken);
+        response.EnsureSuccessStatusCode();
 
         AICatalog? catalog = await response.Content.ReadFromJsonAsync(
             CatalogJsonContext.Default.AICatalog, cancellationToken);
@@ -64,9 +64,9 @@ public class CatalogRepository : ICatalogRepository
         if (catalog is null)
             throw new Exception("Could not connect to the ModelDotDev API");
 
-        foreach (AIProviderInfo provider in catalog.Providers.Values)
+        foreach (AIProviderInfo provider in catalog.Providers?.Values ?? Enumerable.Empty<AIProviderInfo>())
         {
-            foreach (AIModelInfo model in provider.Models)
+            foreach (AIModelInfo model in provider.Models ?? Enumerable.Empty<AIModelInfo>())
             {
                 if (model.Cost is not null)
                     ProcessAllCosts(model.Cost);
