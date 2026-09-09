@@ -114,8 +114,7 @@ public class ModelInfoRepository : IModelInfoRepository
         {
             foreach (AIProviderInfo provider in providers)
             {
-                if (provider is not null)
-                    yield return provider;
+                yield return provider;
             }
         }
     }

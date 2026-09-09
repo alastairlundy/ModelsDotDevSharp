@@ -27,7 +27,7 @@ namespace ModelsDotDevSharp.Converters;
 using System.Text.Json;
 using Contexts;
 
-public static class CostContextOverridePostProcessor
+internal static class CostContextOverridePostProcessor
 {
     public static void Process(AIModelCostInfo cost, JsonSerializerOptions options)
     {

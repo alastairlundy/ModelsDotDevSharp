@@ -7,3 +7,4 @@ global using ModelsDotDevSharp;
 global using ModelsDotDevSharp.Abstractions;
 global using ModelsDotDevSharp.Contexts;
 global using ModelsDotDevSharp.Converters;
+global using ModelsDotDevSharp.Internal;

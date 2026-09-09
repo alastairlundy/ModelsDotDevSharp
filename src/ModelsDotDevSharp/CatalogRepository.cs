@@ -66,7 +66,7 @@ public class CatalogRepository : ICatalogRepository
 
         foreach (AIProviderInfo provider in catalog.Providers?.Values ?? Enumerable.Empty<AIProviderInfo>())
         {
-            foreach (AIModelInfo model in provider.Models ?? Enumerable.Empty<AIModelInfo>())
+            foreach (AIModelInfo model in provider.Models)
             {
                 if (model.Cost is not null)
                     ProcessAllCosts(model.Cost);
@@ -96,7 +96,7 @@ public class CatalogRepository : ICatalogRepository
     {
         // Iterative pre-order DFS to avoid unbounded recursion / StackOverflowException
         // on deeply nested ContextOverrides trees.
-        var stack = new Stack<AIModelCostInfo>();
+        Stack<AIModelCostInfo> stack = new Stack<AIModelCostInfo>();
         stack.Push(cost);
 
         while (stack.Count > 0)

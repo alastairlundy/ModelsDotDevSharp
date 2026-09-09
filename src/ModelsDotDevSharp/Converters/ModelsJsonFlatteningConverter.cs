@@ -38,7 +38,7 @@ public sealed class ModelsJsonFlatteningConverter : JsonConverter<AIModelMetadat
             throw new JsonException($"Expected StartObject token. Got {reader.TokenType}.");
         }
 
-        var models = new List<AIModelMetadata>();
+        List<AIModelMetadata> models = new List<AIModelMetadata>();
 
         while (reader.Read())
         {
@@ -75,7 +75,7 @@ public sealed class ModelsJsonFlatteningConverter : JsonConverter<AIModelMetadat
     public override void Write(Utf8JsonWriter writer, AIModelMetadata[] value, JsonSerializerOptions options)
     {
         writer.WriteStartObject();
-        foreach (var model in value)
+        foreach (AIModelMetadata model in value)
         {
             writer.WritePropertyName(model.Id ?? string.Empty);
             JsonSerializer.Serialize(writer, model, ModelMetadataJsonContext.Default.AIModelMetadata);

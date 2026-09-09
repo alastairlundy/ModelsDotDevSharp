@@ -51,12 +51,12 @@ public sealed class FlexibleDateOnlyConverter : JsonConverter<DateOnly?>
             return null;
         }
 
-        if (DateOnly.TryParseExact(dateString, FullFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+        if (DateOnly.TryParseExact(dateString, FullFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateOnly date))
         {
             return date;
         }
 
-        if (DateOnly.TryParseExact(dateString, ShortFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out var shortDate))
+        if (DateOnly.TryParseExact(dateString, ShortFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateOnly shortDate))
         {
             return shortDate;
         }

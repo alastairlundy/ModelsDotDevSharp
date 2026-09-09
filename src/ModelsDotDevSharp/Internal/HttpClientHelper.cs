@@ -22,9 +22,7 @@
     SOFTWARE.
 */
 
-using System;
-
-namespace ModelsDotDevSharp;
+namespace ModelsDotDevSharp.Internal;
 
 /// <summary>
 /// Builds an <see cref="HttpClient"/> from the configured <see cref="ModelsDevOptions"/>, validating the

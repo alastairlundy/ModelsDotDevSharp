@@ -34,14 +34,14 @@ using Contexts;
 /// </summary>
 public sealed class AIModelInfoArrayFlatteningConverter : JsonConverter<AIModelInfo[]>
 {
-    public override AIModelInfo[]? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    public override AIModelInfo[] Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         if (reader.TokenType != JsonTokenType.StartObject)
         {
             throw new JsonException($"Expected StartObject token. Got {reader.TokenType}.");
         }
 
-        var models = new List<AIModelInfo>();
+        List<AIModelInfo> models = [];
 
         while (reader.Read())
         {
@@ -72,13 +72,13 @@ public sealed class AIModelInfoArrayFlatteningConverter : JsonConverter<AIModelI
             }
         }
 
-        return models.ToArray();
+        return [.. models];
     }
 
     public override void Write(Utf8JsonWriter writer, AIModelInfo[] value, JsonSerializerOptions options)
     {
         writer.WriteStartObject();
-        foreach (var model in value)
+        foreach (AIModelInfo model in value)
         {
             writer.WritePropertyName(model.Id ?? string.Empty);
             JsonSerializer.Serialize(writer, model, ModelInfoJsonContext.Default.AIModelInfo);
