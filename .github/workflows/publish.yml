@@ -2,20 +2,16 @@ name: Publish Packages to Nuget
 
 on:
   workflow_dispatch
-
+  
 jobs:
   build-and-publish:
       runs-on: ubuntu-latest
-      
-     permissions:
-      contents: read
-      id-token: write 
+  
+      permissions:
+        id-token: write 
       environment: production
-  
-    build-and-publish:
-      runs-on: ubuntu-latest
-  
-    steps:
+      
+      steps:
         # Build your artifacts/my-sdk.nupkg package here
         - name: Build
           run: dotnet build src/ModelsDotDevSharp -c Release
