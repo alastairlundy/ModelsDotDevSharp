@@ -1,14 +1,7 @@
 name: Publish Packages to Nuget
 
 on:
-  workflow_dispatch:
-     inputs:
-      core-version:
-         type: string
-         required: true
-      main-version:
-        type: string
-        required: true
+  workflow_dispatch
 
 jobs:
   build-and-publish:
@@ -24,7 +17,9 @@ jobs:
   
     steps:
         # Build your artifacts/my-sdk.nupkg package here
-      
+        - name: Build
+          run: dotnet build src/ModelsDotDevSharp -c Release
+
         # Get a short-lived NuGet API key
         - name: NuGet login (OIDC → temp API key)
           uses: NuGet/login@v1
