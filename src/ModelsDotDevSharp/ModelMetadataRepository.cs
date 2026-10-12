@@ -22,7 +22,6 @@
     SOFTWARE.
  */
 
-using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 
 namespace ModelsDotDevSharp;
@@ -32,18 +31,15 @@ namespace ModelsDotDevSharp;
 /// </summary>
 public class ModelMetadataRepository : IModelMetadataRepository
 {
-    private readonly IHttpClientFactory _httpClientFactory;
-    private readonly IOptions<ModelsDevOptions> _options;
+    private readonly IModelsDevTransport _transport;
 
     /// <summary>
     /// Creates a new <see cref="ModelMetadataRepository"/>.
     /// </summary>
-    /// <param name="httpClientFactory">The factory used to create HTTP clients.</param>
-    /// <param name="options">The configured <see cref="ModelsDevOptions"/>.</param>
-    public ModelMetadataRepository(IHttpClientFactory httpClientFactory, IOptions<ModelsDevOptions> options)
+    /// <param name="transport">The transport used to fetch the model metadata collection.</param>
+    internal ModelMetadataRepository(IModelsDevTransport transport)
     {
-        _httpClientFactory = httpClientFactory;
-        _options = options;
+        _transport = transport;
     }
 
     /// <summary>
@@ -54,16 +50,8 @@ public class ModelMetadataRepository : IModelMetadataRepository
     public async IAsyncEnumerable<AIModelMetadata> EnumerateModelMetadataAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        HttpClient client = HttpClientHelper.CreateClient(_httpClientFactory, _options.Value);
-
-        using HttpResponseMessage response = await client.GetAsync("/models.json", cancellationToken);
-        response.EnsureSuccessStatusCode();
-
-        AIModelMetadata[]? models = await response.Content.ReadFromJsonAsync(
-            ModelMetadataJsonContext.Default.AIModelMetadataArray, cancellationToken);
-
-        if (models is null)
-            yield break;
+        AIModelMetadata[] models = await _transport.GetCollectionAsync(
+            "/models.json", ModelMetadataJsonContext.Default.AIModelMetadataArray, cancellationToken);
 
         foreach (AIModelMetadata model in models)
         {

@@ -22,7 +22,6 @@
     SOFTWARE.
  */
 
-using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 
 namespace ModelsDotDevSharp;
@@ -32,18 +31,15 @@ namespace ModelsDotDevSharp;
 /// </summary>
 public class ModelInfoRepository : IModelInfoRepository
 {
-    private readonly IHttpClientFactory _httpClientFactory;
-    private readonly IOptions<ModelsDevOptions> _options;
+    private readonly IModelsDevTransport _transport;
 
     /// <summary>
     /// Creates a new <see cref="ModelInfoRepository"/>.
     /// </summary>
-    /// <param name="httpClientFactory">The factory used to create HTTP clients.</param>
-    /// <param name="options">The configured <see cref="ModelsDevOptions"/>.</param>
-    public ModelInfoRepository(IHttpClientFactory httpClientFactory, IOptions<ModelsDevOptions> options)
+    /// <param name="transport">The transport used to fetch the provider collection.</param>
+    internal ModelInfoRepository(IModelsDevTransport transport)
     {
-        _httpClientFactory = httpClientFactory;
-        _options = options;
+        _transport = transport;
     }
 
     /// <summary>
@@ -102,20 +98,12 @@ public class ModelInfoRepository : IModelInfoRepository
     public async IAsyncEnumerable<AIProviderInfo> EnumerateProviderInfosAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        HttpClient client = HttpClientHelper.CreateClient(_httpClientFactory, _options.Value);
+        AIProviderInfo[] providers = await _transport.GetCollectionAsync(
+            "/api.json", ModelInfoJsonContext.Default.AIProviderInfoArray, cancellationToken);
 
-        using HttpResponseMessage response = await client.GetAsync("/api.json", cancellationToken);
-        response.EnsureSuccessStatusCode();
-
-        AIProviderInfo[]? providers = await response.Content.ReadFromJsonAsync(
-            ModelInfoJsonContext.Default.AIProviderInfoArray, cancellationToken);
-
-        if (providers is not null)
+        foreach (AIProviderInfo provider in providers)
         {
-            foreach (AIProviderInfo provider in providers)
-            {
-                yield return provider;
-            }
+            yield return provider;
         }
     }
 

@@ -47,8 +47,11 @@ public static class ModelsDevServiceCollectionExtensions
         {
             services.AddHttpClient();
             services.Configure(configureOptions);
-            services.AddSingleton<IModelInfoRepository, ModelInfoRepository>();
-            services.AddSingleton<IModelMetadataRepository, ModelMetadataRepository>();
+            services.AddSingleton<IModelsDevTransport, ModelsDevTransport>();
+            services.AddSingleton<IModelInfoRepository>(
+                static provider => new ModelInfoRepository(provider.GetRequiredService<IModelsDevTransport>()));
+            services.AddSingleton<IModelMetadataRepository>(
+                static provider => new ModelMetadataRepository(provider.GetRequiredService<IModelsDevTransport>()));
             services.AddSingleton<ICatalogRepository, CatalogRepository>();
             return services;
         }
