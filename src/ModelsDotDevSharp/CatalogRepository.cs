@@ -50,7 +50,7 @@ public class CatalogRepository : ICatalogRepository
     /// </summary>
     /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns>The AI catalog.</returns>
-    /// <exception cref="Exception">The catalog could not be retrieved or deserialized.</exception>
+    /// <exception cref="InvalidDataException">The catalog response body was empty or deserialized to <see langword="null"/>.</exception>
     public async Task<AICatalog> GetCatalogAsync(CancellationToken cancellationToken = default)
     {
         HttpClient client = HttpClientHelper.CreateClient(_httpClientFactory, _options.Value);
@@ -62,7 +62,7 @@ public class CatalogRepository : ICatalogRepository
             CatalogJsonContext.Default.AICatalog, cancellationToken);
 
         if (catalog is null)
-            throw new Exception("Could not connect to the ModelDotDev API");
+            throw new InvalidDataException("The models.dev API response body was empty or deserialized to null.");
 
         foreach (AIProviderInfo provider in catalog.Providers?.Values ?? Enumerable.Empty<AIProviderInfo>())
         {
