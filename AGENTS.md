@@ -25,7 +25,7 @@
   - `src/ModelsDotDevSharp/Contexts/CatalogJsonContext.cs` (`AICatalog` and the provider/model types used by the catalog)
 - Custom `JsonConverter`s live in `src/ModelsDotDevSharp/Converters/` and are wired into the contexts via `[JsonSourceGenerationOptions(Converters = [...])]`: `FlexibleDateOnlyConverter`, `InterleavedBooleanOrObjectConverter`, `AIProviderInfoArrayFlatteningConverter`, `AIModelInfoArrayFlatteningConverter`, `ModelsJsonFlatteningConverter`, `CostContextOverridePostProcessor`.
 - When you add a new serializable model, you must also add a matching `[JsonSerializable(typeof(YourType))]` to the relevant context (or extend an existing one). Otherwise AOT builds will fail and trimming warnings will appear.
-- Repositories take `IHttpClientFactory` + `IOptions<ModelsDevOptions>` via constructor injection — that is the supported HTTP path. Don't add `static HttpClient` fields.
+- The internal Singleton transport (`IModelsDevTransport`/`ModelsDevTransport` in `Internal/`) owns client creation, GET, status check, decode, and null-to-empty mapping for the collection endpoints; `ModelInfoRepository` and `ModelMetadataRepository` consume it via constructor injection while `CatalogRepository` keeps a direct `IHttpClientFactory` + `IOptions<ModelsDevOptions>` path for its `/catalog.json` document fetch — that is the supported HTTP path. Don't add `static HttpClient` fields.
 
 ## Compatibility with models.dev is the primary contract
 - Every `Models/*.cs` type uses `[JsonPropertyName("...")]` to bind to models.dev's JSON field names. Names like `input_audio`, `output_audio`, `cache_read`, `cache_write`, `structured_output`, `tool_call`, `open_weights`, `last_updated`, `knowledge` must stay byte-for-byte identical to the upstream schema.
@@ -46,8 +46,8 @@
 
 ## Known behaviors worth knowing
 - `GetModelInfoByIdAsync` and `GetProviderInfoByIdAsync` catch `NullReferenceException` from LINQ `First`/`FirstAsync` and rethrow as `ArgumentException`. Don't "fix" the throw type without confirming it isn't part of the public contract.
-- `GetCatalogAsync` throws a bare `Exception("Could not connect to the ModelDotDev API")` when the JSON deserializes to `null`. Caller code may depend on that message.
-- `GetProviderInfosAsync` returns an empty array (not an exception) when the response body is empty or deserializes to `null`.
+- `GetCatalogAsync` throws `InvalidDataException("The models.dev API response body was empty or deserialized to null.")` when the JSON deserializes to `null`. This replaced the retired bare-`Exception` message `"Could not connect to the ModelDotDev API"`; callers matching the old text break.
+- Every repository documents one unified empty-versus-throw policy: the collection endpoints (`GetProviderInfosAsync`, `EnumerateProviderInfosAsync`, `EnumerateModelMetadataAsync`) yield empty results (not an exception) when the response body is empty or deserializes to `null`, implemented once in the Singleton transport.
 - `src/.idea/` is a JetBrains IDE folder; it is gitignored via `/src/.idea` in the root `.gitignore`. Do not commit changes to it.
 
 ## What is intentionally not here

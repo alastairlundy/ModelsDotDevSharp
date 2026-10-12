@@ -27,6 +27,12 @@ namespace ModelsDotDevSharp.Abstractions;
 /// <summary>
 /// Provides an abstraction for retrieving the combined AI catalog from the /catalog.json endpoint.
 /// </summary>
+/// <remarks>
+/// One empty-versus-throw policy spans every repository in this library: collection endpoints yield empty
+/// results when the response body is absent or deserializes to <see langword="null"/>, while this catalog
+/// document throws <see cref="InvalidDataException"/> with the message "The models.dev API response body was
+/// empty or deserialized to null." when its body does.
+/// </remarks>
 public interface ICatalogRepository
 {
     /// <summary>
@@ -34,5 +40,6 @@ public interface ICatalogRepository
     /// </summary>
     /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns>The AI catalog.</returns>
+    /// <exception cref="InvalidDataException">The response body was empty or deserialized to <see langword="null"/>.</exception>
     Task<AICatalog> GetCatalogAsync(CancellationToken cancellationToken = default);
 }

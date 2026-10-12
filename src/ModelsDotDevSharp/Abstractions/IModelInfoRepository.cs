@@ -27,6 +27,13 @@ namespace ModelsDotDevSharp.Abstractions;
 /// <summary>
 /// Provides an abstraction for retrieving information about AI models and their providers.
 /// </summary>
+/// <remarks>
+/// One empty-versus-throw policy spans every repository in this library: collection endpoints yield empty
+/// results when the response body is absent or deserializes to <see langword="null"/>, while the catalog
+/// document behind <see cref="ICatalogRepository"/> throws <see cref="InvalidDataException"/> with the message
+/// "The models.dev API response body was empty or deserialized to null." when its body does. This repository's
+/// collection endpoint (/api.json) therefore yields empty results rather than throwing on absent data.
+/// </remarks>
 public interface IModelInfoRepository
 {
     /// <summary>
@@ -59,6 +66,7 @@ public interface IModelInfoRepository
 
     /// <summary>
     /// Enumerates all available provider information, one provider at a time.
+    /// Yields no elements if the response body is empty or deserializes to <see langword="null"/>.
     /// </summary>
     /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns>An async enumerable of provider information.</returns>

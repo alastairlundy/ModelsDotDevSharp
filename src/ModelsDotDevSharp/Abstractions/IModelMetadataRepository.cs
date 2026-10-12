@@ -27,6 +27,13 @@ namespace ModelsDotDevSharp.Abstractions;
 /// <summary>
 /// Provides an abstraction for retrieving AI model metadata from the /models.json endpoint.
 /// </summary>
+/// <remarks>
+/// One empty-versus-throw policy spans every repository in this library: collection endpoints yield empty
+/// results when the response body is absent or deserializes to <see langword="null"/>, while the catalog
+/// document behind <see cref="ICatalogRepository"/> throws <see cref="InvalidDataException"/> with the message
+/// "The models.dev API response body was empty or deserialized to null." when its body does. This repository's
+/// collection endpoint (/models.json) therefore yields empty results rather than throwing on absent data.
+/// </remarks>
 public interface IModelMetadataRepository
 {
     /// <summary>
@@ -40,6 +47,7 @@ public interface IModelMetadataRepository
     /// <summary>
     /// Enumerates all available model metadata.
     /// The underlying wire format is a dictionary, so the data is materialized as an array before streaming.
+    /// Yields no elements if the response body is empty or deserializes to <see langword="null"/>.
     /// </summary>
     /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns>An async enumerable of model metadata.</returns>
