@@ -46,6 +46,11 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <!-- Lets the test assembly substitute the internal transport seam (IModelsDevTransport). -->
+      <InternalsVisibleTo Include="ModelsDotDevSharp.Tests" />
+    </ItemGroup>
+
+    <ItemGroup>
       <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
       <PackageReference Include="Microsoft.Extensions.Http" />
       <PackageReference Include="Microsoft.Extensions.Options" />
