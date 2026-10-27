@@ -10,9 +10,29 @@ updates:
         - "src" # Location of package manifests
         - "tests"
     schedule:
-      interval: "weekly"
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 14
+    groups:
+      nuget-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "github-actions" # See documentation for possible values
     directory: "/" # Location of package manifests
     schedule:
-      interval: "weekly"
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 14
+    groups:
+      nuget-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
