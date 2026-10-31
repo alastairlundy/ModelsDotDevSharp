@@ -43,6 +43,9 @@ public class TransportPolicyTests
     private const string NullDecodeBody = "null";
     private const string EmptyCollectionBody = "{}";
     private const string PopulatedProvidersBody = """{"openai":{"name":"OpenAI"}}""";
+    private const string PopulatedProvidersWithModelsBody =
+        """{"openai":{"name":"OpenAI","models":{"gpt-1":{"name":"GPT One"}}}}""";
+    private const string PopulatedModelsBody = """{"oai/gpt-1":{"name":"GPT One"}}""";
     private const string UnifiedNullBodyMessage =
         "The models.dev API response body was empty or deserialized to null.";
 
@@ -133,6 +136,78 @@ public class TransportPolicyTests
         await Assert.That(handler.RequestedPaths[0]).IsEqualTo("/catalog.json");
     }
 
+    [Test]
+    public async Task GetProviderInfoById_ReturnsMatchingProvider_WhenFound()
+    {
+        CannedTransport transport = new(PopulatedProvidersBody);
+        using ServiceProvider provider = BuildProvider(services => services.AddSingleton<IModelsDevTransport>(transport));
+
+        IModelInfoRepository modelInfo = provider.GetRequiredService<IModelInfoRepository>();
+
+        AIProviderInfo providerInfo = await modelInfo.GetProviderInfoByIdAsync("openai");
+
+        await Assert.That(providerInfo.Id).IsEqualTo("openai");
+    }
+
+    [Test]
+    public async Task GetProviderInfoById_ThrowsArgumentException_WhenNotFound()
+    {
+        CannedTransport transport = new(PopulatedProvidersBody);
+        using ServiceProvider provider = BuildProvider(services => services.AddSingleton<IModelsDevTransport>(transport));
+
+        IModelInfoRepository modelInfo = provider.GetRequiredService<IModelInfoRepository>();
+
+        await Assert.ThrowsAsync<ArgumentException>(() => modelInfo.GetProviderInfoByIdAsync("anthropic"));
+    }
+
+    [Test]
+    public async Task GetModelInfoById_ReturnsMatchingModel_WhenFound()
+    {
+        CannedTransport transport = new(PopulatedProvidersWithModelsBody);
+        using ServiceProvider provider = BuildProvider(services => services.AddSingleton<IModelsDevTransport>(transport));
+
+        IModelInfoRepository modelInfo = provider.GetRequiredService<IModelInfoRepository>();
+
+        AIModelInfo model = await modelInfo.GetModelInfoByIdAsync("openai", "gpt-1");
+
+        await Assert.That(model.Id).IsEqualTo("gpt-1");
+    }
+
+    [Test]
+    public async Task GetModelInfoById_ThrowsArgumentException_WhenNotFound()
+    {
+        CannedTransport transport = new(PopulatedProvidersWithModelsBody);
+        using ServiceProvider provider = BuildProvider(services => services.AddSingleton<IModelsDevTransport>(transport));
+
+        IModelInfoRepository modelInfo = provider.GetRequiredService<IModelInfoRepository>();
+
+        await Assert.ThrowsAsync<ArgumentException>(() => modelInfo.GetModelInfoByIdAsync("openai", "gpt-2"));
+    }
+
+    [Test]
+    public async Task GetModelMetadata_ReturnsMatchingMetadata_WhenFound()
+    {
+        CannedTransport transport = new(PopulatedModelsBody, requestedPath: "/models.json");
+        using ServiceProvider provider = BuildProvider(services => services.AddSingleton<IModelsDevTransport>(transport));
+
+        IModelMetadataRepository modelMetadata = provider.GetRequiredService<IModelMetadataRepository>();
+
+        AIModelMetadata metadata = await modelMetadata.GetModelMetadataAsync("oai/gpt-1");
+
+        await Assert.That(metadata.Id).IsEqualTo("oai/gpt-1");
+    }
+
+    [Test]
+    public async Task GetModelMetadata_ThrowsArgumentException_WhenNotFound()
+    {
+        CannedTransport transport = new(PopulatedModelsBody, requestedPath: "/models.json");
+        using ServiceProvider provider = BuildProvider(services => services.AddSingleton<IModelsDevTransport>(transport));
+
+        IModelMetadataRepository modelMetadata = provider.GetRequiredService<IModelMetadataRepository>();
+
+        await Assert.ThrowsAsync<ArgumentException>(() => modelMetadata.GetModelMetadataAsync("oai/gpt-2"));
+    }
+
     private static ServiceProvider BuildProvider(Action<IServiceCollection> substitute)
     {
         ServiceCollection services = new();
@@ -149,7 +224,7 @@ public class TransportPolicyTests
     /// type info supplied by the repository, exactly as the real transport does minus HTTP, and that
     /// records every requested path.
     /// </summary>
-    private sealed class CannedTransport(string body) : IModelsDevTransport
+    private sealed class CannedTransport(string body, string requestedPath = "/api.json") : IModelsDevTransport
     {
         private readonly List<string> _requestedPaths = [];
 
@@ -162,7 +237,7 @@ public class TransportPolicyTests
         {
             _requestedPaths.Add(relativePath);
 
-            TElement[]? decoded = JsonSerializer.Deserialize(body, typeInfo);
+            TElement[]? decoded = JsonSerializer.Deserialize(requestedPath == relativePath ? body : "{}", typeInfo);
             return Task.FromResult(decoded ?? []);
         }
     }
