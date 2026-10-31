@@ -68,12 +68,17 @@ public class ModelMetadataRepository : IModelMetadataRepository
     /// <exception cref="ArgumentException">No model metadata with the given <paramref name="id"/> exists.</exception>
     public async Task<AIModelMetadata> GetModelMetadataAsync(string id, CancellationToken cancellationToken = default)
     {
-        AIModelMetadata? result = await EnumerateModelMetadataAsync(cancellationToken)
-            .FirstOrDefaultAsync(m => m.Id == id, cancellationToken);
+        AIModelMetadata[] models = await _transport.GetCollectionAsync(
+            "/models.json", ModelMetadataJsonContext.Default.AIModelMetadataArray, cancellationToken);
 
-        if (result is null)
-            throw new ArgumentException($"Model metadata with Id of {id} not found.");
+        foreach (AIModelMetadata model in models)
+        {
+            if (model?.Id == id)
+            {
+                return model;
+            }
+        }
 
-        return result;
+        throw new ArgumentException($"Model metadata with Id of {id} not found.");
     }
 }

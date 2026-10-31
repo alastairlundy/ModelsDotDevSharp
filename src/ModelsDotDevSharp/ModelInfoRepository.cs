@@ -58,14 +58,15 @@ public class ModelInfoRepository : IModelInfoRepository
 
         AIProviderInfo provider = await GetProviderInfoByIdAsync(providerId, cancellationToken);
 
-        try
+        foreach (AIModelInfo model in provider.Models ?? [])
         {
-            return provider.Models.First(m => m.Id == modelId);
+            if (model?.Id == modelId)
+            {
+                return model;
+            }
         }
-        catch (NullReferenceException)
-        {
-            throw new ArgumentException($"Model with with Id of {modelId} not found.");
-        }
+
+        throw new ArgumentException($"Model with with Id of {modelId} not found.");
     }
 
     /// <summary>
@@ -80,14 +81,18 @@ public class ModelInfoRepository : IModelInfoRepository
     {
         ArgumentNullException.ThrowIfNull(providerId);
 
-        try
+        AIProviderInfo[] providers = await _transport.GetCollectionAsync(
+            "/api.json", ModelInfoJsonContext.Default.AIProviderInfoArray, cancellationToken);
+
+        foreach (AIProviderInfo provider in providers)
         {
-            return await EnumerateProviderInfosAsync(cancellationToken).FirstAsync(p => p.Id == providerId, cancellationToken);
+            if (provider?.Id == providerId)
+            {
+                return provider;
+            }
         }
-        catch (NullReferenceException)
-        {
-            throw new ArgumentException($"Provider with with Id of {providerId} not found.");
-        }
+
+        throw new ArgumentException($"Provider with with Id of {providerId} not found.");
     }
 
     /// <summary>
@@ -112,7 +117,6 @@ public class ModelInfoRepository : IModelInfoRepository
     /// </summary>
     /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns>An array of provider infos.</returns>
-    public async Task<AIProviderInfo[]> GetProviderInfosAsync(CancellationToken cancellationToken = default) => 
-        await EnumerateProviderInfosAsync(cancellationToken)
-            .ToArrayAsync(cancellationToken);
+    public Task<AIProviderInfo[]> GetProviderInfosAsync(CancellationToken cancellationToken = default) =>
+        _transport.GetCollectionAsync("/api.json", ModelInfoJsonContext.Default.AIProviderInfoArray, cancellationToken);
 }

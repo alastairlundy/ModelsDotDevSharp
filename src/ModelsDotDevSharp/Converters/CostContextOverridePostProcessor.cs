@@ -40,7 +40,7 @@ internal static class CostContextOverridePostProcessor
 
         foreach (KeyValuePair<string, JsonElement> pair in cost.ContextOverridesRaw)
         {
-            if (!pair.Key.StartsWith(prefix))
+            if (!pair.Key.StartsWith(prefix, StringComparison.Ordinal))
             {
                 continue;
             }
