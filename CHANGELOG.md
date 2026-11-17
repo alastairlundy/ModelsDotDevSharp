@@ -3,6 +3,30 @@
 All notable changes to this project are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.0] - Unreleased
+
+### Added
+
+- Internal collection transport seam `IModelsDevTransport` / `ModelsDevTransport` (registered as a Singleton) that centralizes HTTP client creation, GET, status-code validation, source-generated JSON decoding, and null-to-empty mapping for the `/api.json` and `/models.json` collection endpoints.
+- `InternalsVisibleTo("ModelsDotDevSharp.Tests")` so the transport seam can be substituted in tests.
+- NuGet publish workflow (`.github/workflows/publish.yml`) using OIDC trusted publishing.
+- Documented the unified empty-versus-throw policy across all repository abstractions.
+
+### Changed
+
+- `ModelInfoRepository` and `ModelMetadataRepository` now consume `IModelsDevTransport` instead of `IHttpClientFactory` + `IOptions<ModelsDevOptions>`; their constructors are now `internal` (repositories are intended to be resolved via dependency injection).
+- `GetModelInfoByIdAsync`, `GetProviderInfoByIdAsync`, and `GetModelMetadataAsync` now scan fetched arrays directly instead of using LINQ `First`/`FirstAsync`, removing `NullReferenceException`-based control flow.
+- `GetCatalogAsync` now throws `InvalidDataException` with the message "The models.dev API response body was empty or deserialized to null." instead of a bare `Exception`.
+- `CostContextOverridePostProcessor` uses ordinal string comparison when matching context override keys.
+- Unified collection endpoints (`GetProviderInfosAsync`, `EnumerateProviderInfosAsync`, `EnumerateModelMetadataAsync`) yield empty results on absent/null bodies through the shared transport.
+- **Runtime Dependencies:** bumped `Microsoft.Extensions.DependencyInjection.Abstractions`, `Microsoft.Extensions.Http`, and `Microsoft.Extensions.Options` from 10.0.12 to 11.0.0.
+- **Testing Dependencies:** bumped `TUnit` from 1.67.0 to 1.83.0.
+- Dependabot configuration: weekly Monday schedule, 3-day cooldown, grouped minor/patch updates, and multiple manifest directories.
+
+### Fixed
+
+- Centralized null/empty response handling for collection endpoints so the empty-versus-throw policy is applied consistently.
+
 ## [0.2.0] - 2026-09-15
 
 ### Global (defaulted)
@@ -52,4 +76,6 @@ Supporting features:
 - HTTP access via `IHttpClientFactory` constructor injection.
 - Trimming- and Native AOT-compatible packaging.
 
+[0.3.0]: https://github.com/alastairlundy/ModelsDotDevSharp/compare/0.2.0...HEAD
+[Unreleased]: https://github.com/alastairlundy/ModelsDotDevSharp/compare/0.2.0...HEAD
 [0.2.0]: https://github.com/alastairlundy/ModelsDotDevSharp/compare/0.1.0...0.2.0
