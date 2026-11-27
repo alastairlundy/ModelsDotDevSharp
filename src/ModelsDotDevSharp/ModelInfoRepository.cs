@@ -81,8 +81,7 @@ public class ModelInfoRepository : IModelInfoRepository
     {
         ArgumentNullException.ThrowIfNull(providerId);
 
-        AIProviderInfo[] providers = await _transport.GetCollectionAsync(
-            "/api.json", ModelInfoJsonContext.Default.AIProviderInfoArray, cancellationToken);
+        AIProviderInfo[] providers = await GetProviderInfosAsync(cancellationToken);
 
         foreach (AIProviderInfo provider in providers)
         {
@@ -103,8 +102,7 @@ public class ModelInfoRepository : IModelInfoRepository
     public async IAsyncEnumerable<AIProviderInfo> EnumerateProviderInfosAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        AIProviderInfo[] providers = await _transport.GetCollectionAsync(
-            "/api.json", ModelInfoJsonContext.Default.AIProviderInfoArray, cancellationToken);
+        AIProviderInfo[] providers = await GetProviderInfosAsync(cancellationToken);
 
         foreach (AIProviderInfo provider in providers)
         {
@@ -117,6 +115,32 @@ public class ModelInfoRepository : IModelInfoRepository
     /// </summary>
     /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns>An array of provider infos.</returns>
-    public Task<AIProviderInfo[]> GetProviderInfosAsync(CancellationToken cancellationToken = default) =>
-        _transport.GetCollectionAsync("/api.json", ModelInfoJsonContext.Default.AIProviderInfoArray, cancellationToken);
+    public async Task<AIProviderInfo[]> GetProviderInfosAsync(CancellationToken cancellationToken = default)
+    {
+        AIProviderInfo[] providers = await _transport.GetCollectionAsync(
+            "/api.json", ModelInfoJsonContext.Default.AIProviderInfoArray, cancellationToken);
+
+        ProcessCosts(providers);
+
+        return providers;
+    }
+
+    /// <summary>
+    /// Resolves <c>context_over_*</c> cost overrides for every model on the <c>/api.json</c> path,
+    /// matching the behaviour <see cref="CatalogRepository"/> already applies to <c>/catalog.json</c>.
+    /// </summary>
+    /// <param name="providers">The providers whose model costs should be processed.</param>
+    private static void ProcessCosts(AIProviderInfo[] providers)
+    {
+        foreach (AIProviderInfo provider in providers)
+        {
+            foreach (AIModelInfo model in provider.Models ?? [])
+            {
+                if (model is not null)
+                {
+                    CostProcessing.ProcessModel(model, ModelInfoJsonContext.Default.Options);
+                }
+            }
+        }
+    }
 }

@@ -31,7 +31,16 @@ public record AIModelCostTier
     
     [JsonPropertyName("output")]
     public decimal OutputCostPerMillionTokens { get; set; }
-    
+
+    [JsonPropertyName("cache_read")]
+    public decimal? CacheReadPerMillionTokens { get; set; }
+
+    [JsonPropertyName("cache_write")]
+    public decimal? CacheWritePerMillionTokens { get; set; }
+
+    [JsonPropertyName("reasoning")]
+    public decimal? ReasoningCostPerMillionTokens { get; set; }
+
     [JsonPropertyName("tier")]
     public AIModelTierInfo TierInfo { get; set; } = null!;
 }

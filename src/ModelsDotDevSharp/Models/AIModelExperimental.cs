@@ -27,5 +27,5 @@ namespace ModelsDotDevSharp;
 public record AIModelExperimental
 {
     [JsonPropertyName("modes")]
-    public Dictionary<string, AIModelCostInfo>? Modes { get; set; }
+    public Dictionary<string, AIModelExperimentalMode>? Modes { get; set; }
 }

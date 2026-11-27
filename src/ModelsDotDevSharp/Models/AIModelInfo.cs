@@ -37,7 +37,13 @@ public record AIModelInfo
 
     [JsonPropertyName("family")]
     public string Family { get; set; } = string.Empty;
-    
+
+    [JsonPropertyName("type")]
+    public string? Type { get; set; }
+
+    [JsonPropertyName("canonical_model_id")]
+    public string? CanonicalModelId { get; set; }
+
     [JsonPropertyName("attachment")]
     public bool SupportsFileAttachments { get; set; }
     
@@ -71,6 +77,9 @@ public record AIModelInfo
     [JsonPropertyName("cost")]
     public AIModelCostInfo? Cost { get; set; } = null;
 
+    [JsonPropertyName("limit")]
+    public AIModelLimit? Limit { get; set; } = null;
+
     [JsonPropertyName("status")]
     public AIModelStatus? Status { get; set; }
 
@@ -80,17 +89,8 @@ public record AIModelInfo
     [JsonPropertyName("interleaved")]
     public AIModelInterleaved? Interleaved { get; set; }
 
-    [JsonPropertyName("modes")]
-    public Dictionary<string, AIModelCostInfo>? Modes { get; set; }
-
     [JsonPropertyName("experimental")]
     public AIModelExperimental? Experimental { get; set; }
-
-    [JsonPropertyName("headers")]
-    public Dictionary<string, string>? Headers { get; set; }
-
-    [JsonPropertyName("body")]
-    public Dictionary<string, System.Text.Json.JsonElement>? Body { get; set; }
 
     [JsonPropertyName("provider")]
     public AIModelProviderOverride? ProviderOverride { get; set; }

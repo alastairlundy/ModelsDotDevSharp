@@ -39,8 +39,10 @@ using Converters;
 [JsonSerializable(typeof(AIModelReasoningOption))]
 [JsonSerializable(typeof(AIModelInterleaved))]
 [JsonSerializable(typeof(AIModelExperimental))]
+[JsonSerializable(typeof(AIModelExperimentalMode))]
+[JsonSerializable(typeof(AIModelModeProvider))]
 [JsonSerializable(typeof(AIModelProviderOverride))]
-[JsonSourceGenerationOptions(Converters = [typeof(FlexibleDateOnlyConverter), typeof(InterleavedBooleanOrObjectConverter), typeof(AIProviderInfoArrayFlatteningConverter), typeof(AIModelInfoArrayFlatteningConverter)])]
+[JsonSourceGenerationOptions(Converters = [typeof(FlexibleDateOnlyConverter), typeof(InterleavedBooleanOrObjectConverter), typeof(AIProviderInfoArrayFlatteningConverter), typeof(AIModelInfoArrayFlatteningConverter), typeof(JsonStringEnumConverter<AIModelStatus>), typeof(JsonStringEnumConverter<AIModelReasoningOptionType>), typeof(JsonStringEnumConverter<AIModelProviderShape>), typeof(JsonStringEnumConverter<AIModelInterleavedField>)])]
 public partial class ModelInfoJsonContext : JsonSerializerContext
 {
 }

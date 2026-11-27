@@ -38,9 +38,6 @@ public record AIProviderInfo
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
 
-    [JsonPropertyName("description")]
-    public string Description { get; set; } = string.Empty;
-
     [JsonPropertyName("doc")]
     public string? DocumentationUrl { get; set; }
     

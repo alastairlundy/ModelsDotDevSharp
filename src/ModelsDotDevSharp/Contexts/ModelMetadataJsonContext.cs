@@ -32,6 +32,7 @@ using Converters;
 [JsonSerializable(typeof(AIModelBenchmark))]
 [JsonSerializable(typeof(AIModelLimit))]
 [JsonSerializable(typeof(AIModelModalities))]
+[JsonSerializable(typeof(AIModelLinkInfo))]
 [JsonSourceGenerationOptions(Converters = [typeof(FlexibleDateOnlyConverter), typeof(ModelsJsonFlatteningConverter)])]
 public partial class ModelMetadataJsonContext : JsonSerializerContext
 {

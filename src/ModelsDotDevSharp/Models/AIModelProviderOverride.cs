@@ -34,10 +34,4 @@ public record AIModelProviderOverride
 
     [JsonPropertyName("shape")]
     public AIModelProviderShape? Shape { get; set; }
-
-    [JsonPropertyName("body")]
-    public Dictionary<string, System.Text.Json.JsonElement>? Body { get; set; }
-
-    [JsonPropertyName("headers")]
-    public Dictionary<string, string>? Headers { get; set; }
 }

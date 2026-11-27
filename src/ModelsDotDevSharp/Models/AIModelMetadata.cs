@@ -40,6 +40,9 @@ public record AIModelMetadata
     [JsonPropertyName("family")]
     public string Family { get; set; } = string.Empty;
 
+    [JsonPropertyName("type")]
+    public string? Type { get; set; }
+
     [JsonPropertyName("attachment")]
     public bool Attachment { get; set; }
 
@@ -49,11 +52,11 @@ public record AIModelMetadata
     [JsonPropertyName("tool_call")]
     public bool ToolCall { get; set; }
 
-    [JsonPropertyName("structured_output")]
-    public bool StructuredOutput { get; set; }
-
     [JsonPropertyName("temperature")]
     public bool Temperature { get; set; }
+
+    [JsonPropertyName("description")]
+    public string Description { get; set; } = string.Empty;
 
     [JsonPropertyName("knowledge")]
     public DateOnly? Knowledge { get; set; }
@@ -78,4 +81,10 @@ public record AIModelMetadata
 
     [JsonPropertyName("benchmarks")]
     public IReadOnlyList<AIModelBenchmark>? Benchmarks { get; set; }
+
+    [JsonPropertyName("license")]
+    public string? License { get; set; }
+
+    [JsonPropertyName("links")]
+    public IReadOnlyList<AIModelLinkInfo>? Links { get; set; }
 }

@@ -44,6 +44,9 @@ public record AIModelCostInfo
     [JsonPropertyName("cache_write")]
     public decimal CacheWritePerMillionTokens { get; set; }
 
+    [JsonPropertyName("reasoning")]
+    public decimal? ReasoningCostPerMillionTokens { get; set; }
+
     [JsonPropertyName("tiers")] 
     public AIModelCostTier[] Tiers { get; set; } = [];
 

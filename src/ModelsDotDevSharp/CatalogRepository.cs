@@ -68,46 +68,10 @@ public class CatalogRepository : ICatalogRepository
         {
             foreach (AIModelInfo model in provider.Models)
             {
-                if (model.Cost is not null)
-                    ProcessAllCosts(model.Cost);
-
-                if (model.Modes is not null)
-                {
-                    foreach (AIModelCostInfo modeCost in model.Modes.Values)
-                    {
-                        ProcessAllCosts(modeCost);
-                    }
-                }
-
-                if (model.Experimental?.Modes is not null)
-                {
-                    foreach (AIModelCostInfo experimentalModeCost in model.Experimental.Modes.Values)
-                    {
-                        ProcessAllCosts(experimentalModeCost);
-                    }
-                }
+                CostProcessing.ProcessModel(model, CatalogJsonContext.Default.Options);
             }
         }
 
         return catalog;
-    }
-
-    private static void ProcessAllCosts(AIModelCostInfo cost)
-    {
-        // Iterative pre-order DFS to avoid unbounded recursion / StackOverflowException
-        // on deeply nested ContextOverrides trees.
-        Stack<AIModelCostInfo> stack = new Stack<AIModelCostInfo>();
-        stack.Push(cost);
-
-        while (stack.Count > 0)
-        {
-            AIModelCostInfo current = stack.Pop();
-            CostContextOverridePostProcessor.Process(current, CatalogJsonContext.Default.Options);
-
-            foreach (AIModelCostInfo contextOverride in current.ContextOverrides.Values)
-            {
-                stack.Push(contextOverride);
-            }
-        }
     }
 }

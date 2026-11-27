@@ -11,6 +11,15 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `InternalsVisibleTo("ModelsDotDevSharp.Tests")` so the transport seam can be substituted in tests.
 - NuGet publish workflow (`.github/workflows/publish.yml`) using OIDC trusted publishing.
 - Documented the unified empty-versus-throw policy across all repository abstractions.
+- AOT-safe `JsonStringEnumConverter<TEnum>` registrations on `ModelInfoJsonContext` and `CatalogJsonContext`, so `AIModelStatus`, `AIModelReasoningOptionType`, `AIModelProviderShape`, and `AIModelInterleavedField` deserialize from the strings the API sends.
+- `AIModelInfo.Limit`, `AIModelInfo.CanonicalModelId`, and `AIModelInfo.Type` (the `limit`, `canonical_model_id` and `type` fields carried by `/api.json`).
+- `AIModelMetadata.Description`, `AIModelMetadata.License`, `AIModelMetadata.Links`, and `AIModelMetadata.Type`.
+- `AIModelLinkInfo` representing a `/models.json` `links` entry (`label`, `url`, `type`).
+- `AIModelCostInfo.ReasoningCostPerMillionTokens`, plus `CacheReadPerMillionTokens`, `CacheWritePerMillionTokens`, and `ReasoningCostPerMillionTokens` on `AIModelCostTier`.
+- `AIModelWeightInfo.Format` and `AIModelWeightInfo.Quantization`.
+- `AIModelExperimentalMode` and `AIModelModeProvider` modelling the `{cost, provider}` shape of `experimental.modes.{mode}`.
+- Internal `CostProcessing` helper shared by `ModelInfoRepository` and `CatalogRepository`.
+- `PayloadContractTests` pinning the wire shapes of all three endpoints.
 
 ### Changed
 
@@ -19,6 +28,9 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `GetCatalogAsync` now throws `InvalidDataException` with the message "The models.dev API response body was empty or deserialized to null." instead of a bare `Exception`.
 - `CostContextOverridePostProcessor` uses ordinal string comparison when matching context override keys.
 - Unified collection endpoints (`GetProviderInfosAsync`, `EnumerateProviderInfosAsync`, `EnumerateModelMetadataAsync`) yield empty results on absent/null bodies through the shared transport.
+- **Breaking:** `AIModelExperimental.Modes` is now `Dictionary<string, AIModelExperimentalMode>` instead of `Dictionary<string, AIModelCostInfo>`. It previously deserialized the nested `{cost, provider}` object as a cost, yielding all-zero prices.
+- **Breaking:** `AIModelInfo.Modes`, `AIModelInfo.Headers`, `AIModelInfo.Body`, `AIProviderInfo.Description`, `AIModelMetadata.StructuredOutput`, and `AIModelProviderOverride.Body`/`Headers` were removed. None of these fields appear in the live payload, so they read as empty-string or `false` defaults that look like real data.
+- `GetProviderInfosAsync` (and therefore `GetProviderInfoByIdAsync` and `EnumerateProviderInfosAsync`) now resolves `context_over_*` cost overrides, matching `GetCatalogAsync`.
 - **Runtime Dependencies:** bumped `Microsoft.Extensions.DependencyInjection.Abstractions`, `Microsoft.Extensions.Http`, and `Microsoft.Extensions.Options` from 10.0.12 to 11.0.0.
 - **Testing Dependencies:** bumped `TUnit` from 1.67.0 to 1.83.0.
 - Dependabot configuration: weekly Monday schedule, 3-day cooldown, grouped minor/patch updates, and multiple manifest directories.
@@ -26,6 +38,8 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - Centralized null/empty response handling for collection endpoints so the empty-versus-throw policy is applied consistently.
+- `/api.json` and `/catalog.json` no longer throw `JsonException` when deserializing the live payload. Both contexts were missing an enum converter, so any model carrying `status`, `reasoning_options`, `interleaved`, or a `provider.shape` failed the entire read.
+- `context_over_*` cost overrides on the `/api.json` path stayed as raw extension data, so `ContextOverrides` came back empty for 794 costs in a fetched payload. The path now resolves them into typed override costs.
 
 ## [0.2.0] - 2026-09-15
 

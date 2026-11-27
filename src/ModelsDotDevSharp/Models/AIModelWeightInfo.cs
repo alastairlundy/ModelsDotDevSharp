@@ -31,4 +31,10 @@ public record AIModelWeightInfo
 
     [JsonPropertyName("url")]
     public string Url { get; set; } = string.Empty;
+
+    [JsonPropertyName("format")]
+    public string? Format { get; set; }
+
+    [JsonPropertyName("quantization")]
+    public string? Quantization { get; set; }
 }
