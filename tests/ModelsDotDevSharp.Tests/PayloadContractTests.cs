@@ -32,15 +32,22 @@ using ModelsDotDevSharp.Internal;
 namespace ModelsDotDevSharp.Tests;
 
 /// <summary>
-/// Contract tests pinned to the real models.dev wire shapes. Every regression here originated from
-/// the library drifting away from the live schema without a test noticing, so each fixture mirrors
-/// an actual <c>/api.json</c>, <c>/models.json</c> or <c>/catalog.json</c> fragment.
+/// Regression pins for wire-shape bugs this library has already shipped: every fixture mirrors an
+/// actual <c>/api.json</c>, <c>/models.json</c> or <c>/catalog.json</c> fragment that once broke, so
+/// each test covers one past bug. This file detects NO new drift against the live schema - the live
+/// suite owns drift detection. A pin that documents a mapping gap names that gap (with a trimmed
+/// payload dump) in its failure message if it ever goes red.
 /// </summary>
 public class PayloadContractTests
 {
-    /// <summary>Exercises every enum-valued field the live payload carries as a JSON string.</summary>
+    /// <summary>
+    /// Pins the past bug where the <c>/api.json</c> string enums (<c>status</c>,
+    /// <c>reasoning_options.type</c>, <c>interleaved.field</c>, <c>provider.shape</c>) failed to
+    /// deserialize. Past-bug coverage only: it detects no new drift - the live suite owns drift
+    /// detection.
+    /// </summary>
     [Test]
-    public async Task ApiJson_DeserializesStringEnums_FromLiveShape()
+    public async Task ApiJson_StringEnums_RegressionPin_PastEnumDeserializationBug()
     {
         const string body = """
             {"openai":{"name":"OpenAI","models":{
@@ -60,11 +67,14 @@ public class PayloadContractTests
     }
 
     /// <summary>
-    /// <c>experimental.modes.{mode}</c> nests a <c>cost</c> object and a <c>provider</c> override;
-    /// it is not itself a cost. Deserializing it as a cost silently yields all-zero prices.
+    /// Pins the past bug where <c>experimental.modes.{mode}</c> was typed as a bare cost, so the
+    /// nested <c>{cost, provider}</c> object silently deserialized to all-zero prices instead of
+    /// the shape the wire carries. Past-bug coverage only: it detects no new drift - the live suite
+    /// owns drift detection. If this pin ever goes red, its failure message names the gap it
+    /// documents (the experimental mode <c>{cost, provider}</c> shape) with a trimmed payload dump.
     /// </summary>
     [Test]
-    public async Task ExperimentalModes_DeserializeNestedCostAndProvider_FromLiveShape()
+    public async Task ExperimentalModes_CostAndProvider_RegressionPin_PastAllZeroCostBug()
     {
         const string body = """
             {"openai":{"name":"OpenAI","models":{
@@ -75,19 +85,36 @@ public class PayloadContractTests
                                              "headers":{"x-mode":"fast"}}}}}}}}}
             """;
 
-        AIProviderInfo[] providers = JsonSerializer.Deserialize(body, ModelInfoJsonContext.Default.AIProviderInfoArray)!;
-        AIModelExperimentalMode mode = providers[0].Models[0].Experimental!.Modes!["fast"];
+        try
+        {
+            AIProviderInfo[] providers = JsonSerializer.Deserialize(body, ModelInfoJsonContext.Default.AIProviderInfoArray)!;
+            AIModelExperimentalMode mode = providers[0].Models[0].Experimental!.Modes!["fast"];
 
-        await Assert.That(mode.Cost!.InputCostPerMillionTokens).IsEqualTo(0.2625m);
-        await Assert.That(mode.Cost.OutputCostPerMillionTokens).IsEqualTo(0.875m);
-        await Assert.That(mode.Cost.CacheReadPerMillionTokens).IsEqualTo(0.0525m);
-        await Assert.That(mode.Provider!.Body!["service_tier"].GetString()).IsEqualTo("priority");
-        await Assert.That(mode.Provider.Headers!["x-mode"]).IsEqualTo("fast");
+            await Assert.That(mode.Cost!.InputCostPerMillionTokens).IsEqualTo(0.2625m);
+            await Assert.That(mode.Cost.OutputCostPerMillionTokens).IsEqualTo(0.875m);
+            await Assert.That(mode.Cost.CacheReadPerMillionTokens).IsEqualTo(0.0525m);
+            await Assert.That(mode.Provider!.Body!["service_tier"].GetString()).IsEqualTo("priority");
+            await Assert.That(mode.Provider.Headers!["x-mode"]).IsEqualTo("fast");
+        }
+        catch (Exception exception)
+        {
+            throw new InvalidOperationException(
+                "Regression-pin gap: the experimental mode `{cost, provider}` shape. "
+                + $"Payload (trimmed): {TrimPayload(body)}. Failure: {exception.Message}",
+                exception);
+        }
     }
 
-    /// <summary>Fields that exist on the live payload but were previously unmapped.</summary>
+    /// <summary>
+    /// Pins the past bug where fields the live payload carries had no property at all on
+    /// <c>AIModelInfo</c>: <c>limit</c>, <c>canonical_model_id</c>, model <c>type</c>, cost
+    /// <c>reasoning</c>, and tier <c>cache_read</c>/<c>cache_write</c>/<c>reasoning</c>.
+    /// Past-bug coverage only: it detects no new drift - the live suite owns drift detection. If
+    /// this pin ever goes red, its failure message names each gap it documents with a trimmed
+    /// payload dump.
+    /// </summary>
     [Test]
-    public async Task ApiJson_PopulatesFieldsThatPreviouslyHadNoProperty()
+    public async Task ApiJson_UnmappedFields_RegressionPin_PastMissingPropertiesBug()
     {
         const string body = """
             {"openai":{"name":"OpenAI","models":{
@@ -99,24 +126,41 @@ public class PayloadContractTests
                                          "tier":{"type":"context","size":272000}}]}}}}}
             """;
 
-        AIModelInfo model = JsonSerializer
-            .Deserialize(body, ModelInfoJsonContext.Default.AIProviderInfoArray)![0].Models[0];
+        try
+        {
+            AIModelInfo model = JsonSerializer
+                .Deserialize(body, ModelInfoJsonContext.Default.AIProviderInfoArray)![0].Models[0];
 
-        await Assert.That(model.Type).IsEqualTo("chat");
-        await Assert.That(model.CanonicalModelId).IsEqualTo("openai/gpt-1");
-        await Assert.That(model.Limit!.ContextTokens).IsEqualTo(400000);
-        await Assert.That(model.Limit.OutputTokens).IsEqualTo(128000);
-        await Assert.That(model.Cost!.ReasoningCostPerMillionTokens).IsEqualTo(4.4m);
+            await Assert.That(model.Type).IsEqualTo("chat");
+            await Assert.That(model.CanonicalModelId).IsEqualTo("openai/gpt-1");
+            await Assert.That(model.Limit!.ContextTokens).IsEqualTo(400000);
+            await Assert.That(model.Limit.OutputTokens).IsEqualTo(128000);
+            await Assert.That(model.Cost!.ReasoningCostPerMillionTokens).IsEqualTo(4.4m);
 
-        AIModelCostTier tier = model.Cost.Tiers[0];
-        await Assert.That(tier.CacheReadPerMillionTokens).IsEqualTo(0.04m);
-        await Assert.That(tier.CacheWritePerMillionTokens).IsEqualTo(0.6m);
-        await Assert.That(tier.ReasoningCostPerMillionTokens).IsEqualTo(0.8m);
+            AIModelCostTier tier = model.Cost.Tiers[0];
+            await Assert.That(tier.CacheReadPerMillionTokens).IsEqualTo(0.04m);
+            await Assert.That(tier.CacheWritePerMillionTokens).IsEqualTo(0.6m);
+            await Assert.That(tier.ReasoningCostPerMillionTokens).IsEqualTo(0.8m);
+        }
+        catch (Exception exception)
+        {
+            throw new InvalidOperationException(
+                "Regression-pin gap: `limit` on AIModelInfo, `canonical_model_id`, model `type`, "
+                + "cost `reasoning`, tier `cache_read`/`cache_write`/`reasoning`. "
+                + $"Payload (trimmed): {TrimPayload(body)}. Failure: {exception.Message}",
+                exception);
+        }
     }
 
-    /// <summary>Fields on <c>/models.json</c> that were previously unmapped.</summary>
+    /// <summary>
+    /// Pins the past bug where fields the live payload carries had no property at all on
+    /// <c>AIModelMetadata</c>: <c>description</c>, <c>license</c>, <c>links</c>, <c>type</c>, and
+    /// weight <c>format</c>/<c>quantization</c>. Past-bug coverage only: it detects no new drift -
+    /// the live suite owns drift detection. If this pin ever goes red, its failure message names
+    /// each gap it documents with a trimmed payload dump.
+    /// </summary>
     [Test]
-    public async Task ModelsJson_PopulatesFieldsThatPreviouslyHadNoProperty()
+    public async Task ModelsJson_UnmappedFields_RegressionPin_PastMissingPropertiesBug()
     {
         const string body = """
             {"oai/gpt-1":{"name":"GPT One","description":"A helpful model","type":"chat",
@@ -125,31 +169,45 @@ public class PayloadContractTests
                           "weights":[{"label":"Base","url":"https://example.com/w","format":"safetensors","quantization":"fp8"}]}}
             """;
 
-        AIModelMetadata metadata = JsonSerializer
-            .Deserialize(body, ModelMetadataJsonContext.Default.AIModelMetadataArray)![0];
+        try
+        {
+            AIModelMetadata metadata = JsonSerializer
+                .Deserialize(body, ModelMetadataJsonContext.Default.AIModelMetadataArray)![0];
 
-        await Assert.That(metadata.Id).IsEqualTo("oai/gpt-1");
-        await Assert.That(metadata.Description).IsEqualTo("A helpful model");
-        await Assert.That(metadata.Type).IsEqualTo("chat");
-        await Assert.That(metadata.License).IsEqualTo("Apache-2.0");
+            await Assert.That(metadata.Id).IsEqualTo("oai/gpt-1");
+            await Assert.That(metadata.Description).IsEqualTo("A helpful model");
+            await Assert.That(metadata.Type).IsEqualTo("chat");
+            await Assert.That(metadata.License).IsEqualTo("Apache-2.0");
 
-        AIModelLinkInfo link = metadata.Links![0];
-        await Assert.That(link.Label).IsEqualTo("Model docs");
-        await Assert.That(link.Url).IsEqualTo("https://example.com/docs");
-        await Assert.That(link.LinkType).IsEqualTo("docs");
+            AIModelLinkInfo link = metadata.Links![0];
+            await Assert.That(link.Label).IsEqualTo("Model docs");
+            await Assert.That(link.Url).IsEqualTo("https://example.com/docs");
+            await Assert.That(link.LinkType).IsEqualTo("docs");
 
-        AIModelWeightInfo weight = metadata.Weights![0];
-        await Assert.That(weight.Format).IsEqualTo("safetensors");
-        await Assert.That(weight.Quantization).IsEqualTo("fp8");
+            AIModelWeightInfo weight = metadata.Weights![0];
+            await Assert.That(weight.Format).IsEqualTo("safetensors");
+            await Assert.That(weight.Quantization).IsEqualTo("fp8");
+        }
+        catch (Exception exception)
+        {
+            throw new InvalidOperationException(
+                "Regression-pin gap: metadata `description`/`license`/`links`/`type`, "
+                + "weight `format`/`quantization`. "
+                + $"Payload (trimmed): {TrimPayload(body)}. Failure: {exception.Message}",
+                exception);
+        }
     }
 
     /// <summary>
-    /// <c>context_over_*</c> keys arrive as extension data and only become typed
-    /// <see cref="AIModelCostInfo.ContextOverrides"/> once post-processed. The <c>/api.json</c>
-    /// path must do that too, not just <c>/catalog.json</c>.
+    /// Pins the past bug where <c>context_over_*</c> keys stayed raw extension data on the
+    /// <c>/api.json</c> path instead of becoming typed
+    /// <see cref="AIModelCostInfo.ContextOverrides"/>; only <c>/catalog.json</c> post-processed
+    /// them. This is the offline pipeline pin: a canned transport drives <c>GetProviderInfosAsync</c>,
+    /// <c>GetModelInfoByIdAsync</c> and <c>EnumerateProviderInfosAsync</c> end to end. Past-bug
+    /// coverage only: it detects no new drift - the live suite owns drift detection.
     /// </summary>
     [Test]
-    public async Task ApiJson_ResolvesContextOverrides_OnEveryEntryPoint()
+    public async Task ApiJson_ContextOverrides_RegressionPin_OfflinePipelineAllEntryPoints()
     {
         const string body = """
             {"openai":{"name":"OpenAI","models":{
@@ -184,19 +242,47 @@ public class PayloadContractTests
     }
 
     /// <summary>
-    /// Properties that never appear in the live payload must not exist, otherwise they read as
-    /// misleading defaults (empty string / false) that look like real upstream data.
+    /// Pins the past bug where properties that never appear in the live payload (the retired Mode
+    /// term's top-level <c>modes</c>, <c>headers</c>, <c>body</c>, plus
+    /// <c>AIProviderInfo.Description</c>, <c>AIModelMetadata.StructuredOutput</c> and
+    /// <c>AIModelProviderOverride.Body</c>/<c>Headers</c>) lingered on the public surface as
+    /// misleading empty defaults; this reflection pin asserts they stay absent. Past-bug coverage
+    /// only: it detects no new drift - the live suite owns drift detection. If this pin ever goes
+    /// red, its failure message names the gap it documents (the retired stale properties).
     /// </summary>
     [Test]
-    public async Task StaleProperties_AreAbsentFromThePublicSurface()
+    public async Task StaleProperties_RegressionPin_PastRetiredSurfaceBug()
     {
-        await Assert.That(typeof(AIProviderInfo).GetProperty("Description")).IsNull();
-        await Assert.That(typeof(AIModelMetadata).GetProperty("StructuredOutput")).IsNull();
-        await Assert.That(typeof(AIModelInfo).GetProperty("Modes")).IsNull();
-        await Assert.That(typeof(AIModelInfo).GetProperty("Headers")).IsNull();
-        await Assert.That(typeof(AIModelInfo).GetProperty("Body")).IsNull();
-        await Assert.That(typeof(AIModelProviderOverride).GetProperty("Body")).IsNull();
-        await Assert.That(typeof(AIModelProviderOverride).GetProperty("Headers")).IsNull();
+        try
+        {
+            await Assert.That(typeof(AIProviderInfo).GetProperty("Description")).IsNull();
+            await Assert.That(typeof(AIModelMetadata).GetProperty("StructuredOutput")).IsNull();
+            await Assert.That(typeof(AIModelInfo).GetProperty("Modes")).IsNull();
+            await Assert.That(typeof(AIModelInfo).GetProperty("Headers")).IsNull();
+            await Assert.That(typeof(AIModelInfo).GetProperty("Body")).IsNull();
+            await Assert.That(typeof(AIModelProviderOverride).GetProperty("Body")).IsNull();
+            await Assert.That(typeof(AIModelProviderOverride).GetProperty("Headers")).IsNull();
+        }
+        catch (Exception exception)
+        {
+            throw new InvalidOperationException(
+                "Regression-pin gap: the retired stale properties (Mode term; top-level `modes`/"
+                + "`headers`/`body`, AIProviderInfo.Description, AIModelMetadata.StructuredOutput, "
+                + "AIModelProviderOverride.Body/Headers) resurfaced on the public surface. "
+                + "Surface inspected: AIProviderInfo, AIModelMetadata, AIModelInfo, "
+                + $"AIModelProviderOverride. Failure: {exception.Message}",
+                exception);
+        }
+    }
+
+    private static string TrimPayload(string payload, int maxLength = 240)
+    {
+        if (payload.Length <= maxLength)
+        {
+            return payload;
+        }
+
+        return $"{payload[..maxLength]}... (trimmed, {payload.Length} chars total)";
     }
 
     private static ServiceProvider BuildProvider(Action<IServiceCollection> substitute)
