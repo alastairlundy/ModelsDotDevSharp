@@ -8,13 +8,20 @@ jobs:
       runs-on: ubuntu-latest
   
       permissions:
-        id-token: write 
+        contents: read
+        id-token: write
       environment: production
       
       steps:
-        # Build your artifacts/my-sdk.nupkg package here
+        - uses: actions/checkout@v7
+
+        - name: Setup .NET
+          uses: actions/setup-dotnet@v6
+          with:
+            dotnet-version: 10.0.x
+
         - name: Build
-          run: dotnet build src/ModelsDotDevSharp -c Release
+          run: dotnet build src/ModelsDotDevSharp/ModelsDotDevSharp.csproj -c Release
 
         # Get a short-lived NuGet API key
         - name: NuGet login (OIDC → temp API key)
@@ -25,4 +32,4 @@ jobs:
       
         # Push the package
         - name: NuGet push
-          run: dotnet nuget push artifacts/my-sdk.nupkg --api-key ${{steps.login.outputs.NUGET_API_KEY}} --source https://api.nuget.org/v3/index.json
+          run: dotnet nuget push src/ModelsDotDevSharp/bin/Release/ModelsDotDevSharp.*.nupkg --api-key ${{steps.login.outputs.NUGET_API_KEY}} --source https://api.nuget.org/v3/index.json
