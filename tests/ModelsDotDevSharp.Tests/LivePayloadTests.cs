@@ -23,6 +23,7 @@
  */
 
 using System.Globalization;
+using System.Net;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
@@ -555,8 +556,9 @@ public class LivePayloadTests
     /// <summary>
     /// Byte-level layer, step 1 - fetches each endpoint's bytes a second time per run, separate from
     /// the repository-layer fetches, through the same timeout and retry policy. No repository entry
-    /// point participates, so a failure here is only ever a transient network flake (named by the
-    /// retry loop once it exhausts its attempts), never a mapping error.
+    /// point participates. Request failures surface as transient network flakes via the retry loop;
+    /// a successful fetch with the wrong JSON shape surfaces as payload drift here, never as a
+    /// network flake.
     /// </summary>
     [Test]
     public async Task ByteLevelFetch_SucceedsIndependentlyOfTheRepositoryLayer()
@@ -567,12 +569,18 @@ public class LivePayloadTests
 
         foreach ((string endpoint, JsonElement root) in payloads)
         {
-            if (root.ValueKind != JsonValueKind.Object || !root.EnumerateObject().Any())
+            if (root.ValueKind != JsonValueKind.Object)
             {
                 throw new InvalidOperationException(
-                    $"The byte-level pass could not fetch a usable {endpoint} payload: its second fetch "
-                    + "of this endpoint returned no JSON object. A failure here is a network flake, never "
-                    + "a mapping error.");
+                    $"The byte-level pass fetched a usable HTTP response for {endpoint} but its JSON root was {root.ValueKind}, not an object. "
+                    + "This is payload drift, not a network flake: the endpoint returned valid JSON with the wrong shape.");
+            }
+
+            if (!root.EnumerateObject().Any())
+            {
+                throw new InvalidOperationException(
+                    $"The byte-level pass fetched a usable HTTP response for {endpoint} but its JSON object was empty. "
+                    + "This is a payload diagnostic, not a network flake: the endpoint returned valid JSON with no entries.");
             }
         }
     }
@@ -673,10 +681,11 @@ public class LivePayloadTests
     }
 
     /// <summary>
-    /// A small fixed retry loop around one fetch. Transient transport failures (timeouts, refused
-    /// connections, error status codes) are retried up to <see cref="MaxAttempts"/> times; a
-    /// <see cref="JsonException"/> is a mapping error and propagates immediately so the failure can
-    /// never be misread as a network flake.
+    /// A small fixed retry loop around one fetch. Transient failures (timeouts, refused
+    /// connections, transport failures with no status code, and retryable status codes
+    /// 408/429/500/502/503/504) are retried up to <see cref="MaxAttempts"/> times; permanent
+    /// HTTP errors (such as 404) and <see cref="JsonException"/> mapping errors propagate
+    /// immediately so the failure can never be misread as a network flake.
     /// </summary>
     private static async Task<T> RetryAsync<T>(Func<Task<T>> operation, string endpoint)
     {
@@ -701,8 +710,19 @@ public class LivePayloadTests
         }
     }
 
-    private static bool IsTransientNetworkFailure(Exception exception) =>
-        exception is HttpRequestException or TaskCanceledException or IOException;
+    private static bool IsTransientNetworkFailure(Exception exception) => exception switch
+    {
+        TaskCanceledException => true,
+        IOException => true,
+        HttpRequestException http => http.StatusCode is null
+            or HttpStatusCode.RequestTimeout
+            or HttpStatusCode.TooManyRequests
+            or HttpStatusCode.InternalServerError
+            or HttpStatusCode.BadGateway
+            or HttpStatusCode.ServiceUnavailable
+            or HttpStatusCode.GatewayTimeout,
+        _ => false,
+    };
 
     /// <summary>Fetches the raw body of one endpoint through the suite's own configured client.</summary>
     private static async Task<string> FetchRawBodyAsync(ServiceProvider services, string relativePath)
@@ -971,6 +991,34 @@ public class LivePayloadTests
         CheckWireArray(failures, rawMetadata, "links", metadata.Links?.Count ?? -1, $"{path}.links", rawMetadata);
         CheckWireArray(failures, rawMetadata, "weights", metadata.Weights?.Count ?? -1, $"{path}.weights", rawMetadata);
         CheckWireArray(failures, rawMetadata, "benchmarks", metadata.Benchmarks?.Count ?? -1, $"{path}.benchmarks", rawMetadata);
+
+        // The link `label` / `url` / `type` entries.
+        if (rawMetadata.TryGetProperty("links", out JsonElement rawLinks)
+            && rawLinks.ValueKind == JsonValueKind.Array
+            && metadata.Links is { } links
+            && links.Count == rawLinks.GetArrayLength())
+        {
+            int linkIndex = 0;
+            foreach (JsonElement rawLink in rawLinks.EnumerateArray())
+            {
+                if (rawLink.ValueKind == JsonValueKind.Object)
+                {
+                    string linkPath = $"{path}.links[{linkIndex}]";
+                    if (links[linkIndex] is not { } link)
+                    {
+                        Fail(failures, linkPath, "a link deserialized to null", rawMetadata);
+                    }
+                    else
+                    {
+                        CheckWireString(failures, rawLink, "label", link.Label, linkPath, rawMetadata);
+                        CheckWireString(failures, rawLink, "url", link.Url, linkPath, rawMetadata);
+                        CheckWireString(failures, rawLink, "type", link.LinkType, linkPath, rawMetadata);
+                    }
+                }
+
+                linkIndex++;
+            }
+        }
 
         // The weight `format` / `quantization` entries from the drift comparison.
         if (rawMetadata.TryGetProperty("weights", out JsonElement rawWeights)
