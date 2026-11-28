@@ -67,4 +67,4 @@ Triage labels use the canonical five strings (`needs-triage`, `needs-info`, `rea
 
 ### Domain docs
 
-Single-context layout: one `CONTEXT.md` and `docs/adr/` at the repo root (neither exists yet; skills will create them lazily). See `docs/agents/domain.md`.
+Single-context layout: `GLOSSARY.md` at the repo root (renamed from `CONTEXT.md`), plus `docs/adr/` at the repo root (`docs/adr/` does not exist yet; skills will create it lazily). See `docs/agents/domain.md`.

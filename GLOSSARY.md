@@ -1,4 +1,4 @@
-# CONTEXT
+# GLOSSARY
 
 > Domain glossary for `ModelsDotDevSharp`. The C# type names that appear in the
 > source code are *derived from* these terms; this file describes the domain, not
@@ -17,11 +17,10 @@ information from models.dev — that layer is called a `Repository` (see below).
 ## Model — per-provider view
 
 The shape of a model as it is served by a specific provider. Includes the
-provider-specific facts: pricing, tiered cost overrides, alternative pricing
-modes, experimental modes, request-body and header overrides, and the
-provider-override sub-object (which controls how this particular model is
-routed). The per-provider view **does not** include the model's intrinsic
-context limits, weights, or benchmarks — those live on the canonical view.
+provider-specific facts: pricing, tiered cost overrides, experimental modes,
+context limits, and the provider-override sub-object (which controls how this
+particular model is routed). The per-provider view **does not** include the
+model's weights or benchmarks; those live on the canonical view.
 
 ## Model — canonical view
 
@@ -34,12 +33,13 @@ is", independent of who serves it.
 
 ## Provider override
 
-A per-model delta over the top-level provider's routing defaults. The override
-may change the SDK package, API URL, request shape (completions or responses),
-request-body, and HTTP headers used to invoke this specific model. The override
-is **not** a free-standing provider — it is always read in the context of the
-top-level provider that owns the model. Two models in the same provider may
-have different overrides.
+A per-model delta over the top-level provider's routing defaults. The
+model-level override carries the SDK package, API URL, and request shape
+(completions or responses). Request-body and HTTP-header overrides live on the
+`provider` sub-object of an experimental mode entry, not on the model-level
+override. The override is **not** a free-standing provider; it is always read in
+the context of the top-level provider that owns the model. Two models in the
+same provider may have different overrides.
 
 ## Context override
 
@@ -49,18 +49,12 @@ the value is the cost that applies once the model's input context exceeds that
 threshold. The convention is `"context_over_{N}"`; the key is a string, not a
 nested structure, so the C# representation is a dictionary keyed by suffix.
 
-## Mode
-
-An alternative pricing mode for a model (e.g., `"fast"`, `"slow"`). Each mode
-carries a cost that replaces the model's default cost when the mode is in
-effect. The keys are arbitrary mode names, not nested structures; the C#
-representation is a dictionary keyed by mode name.
-
 ## Experimental mode
 
-A mode that is explicitly marked unstable by upstream. Carries the same shape
-as a regular `Mode` but is surfaced under a separate `experimental` sub-object
-on the model so that consumers can opt in (or not) deliberately.
+A mode that is explicitly marked unstable by upstream. Each entry carries a
+`cost` plus an optional `provider` sub-object (request-body and header
+overrides). Entries are surfaced under a separate `experimental` sub-object on
+the model so that consumers can opt in (or not) deliberately.
 
 ## Interleaved reasoning
 
