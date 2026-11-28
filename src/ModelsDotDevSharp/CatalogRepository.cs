@@ -64,11 +64,21 @@ public class CatalogRepository : ICatalogRepository
         if (catalog is null)
             throw new InvalidDataException("The models.dev API response body was empty or deserialized to null.");
 
-        foreach (AIProviderInfo provider in catalog.Providers?.Values ?? Enumerable.Empty<AIProviderInfo>())
+        foreach (AIProviderInfo? provider in catalog.Providers?.Values ?? Enumerable.Empty<AIProviderInfo>())
         {
-            foreach (AIModelInfo model in provider.Models)
+            if (provider is null)
             {
-                CostProcessing.ProcessModel(model, CatalogJsonContext.Default.Options);
+                continue;
+            }
+
+            foreach (AIModelInfo? model in provider.Models ?? [])
+            {
+                if (model is null)
+                {
+                    continue;
+                }
+
+                CostProcessing.ProcessModel(model, CatalogJsonContext.Default.AIModelCostInfo);
             }
         }
 

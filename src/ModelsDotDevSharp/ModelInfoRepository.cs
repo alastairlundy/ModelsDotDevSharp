@@ -132,13 +132,18 @@ public class ModelInfoRepository : IModelInfoRepository
     /// <param name="providers">The providers whose model costs should be processed.</param>
     private static void ProcessCosts(AIProviderInfo[] providers)
     {
-        foreach (AIProviderInfo provider in providers)
+        foreach (AIProviderInfo? provider in providers)
         {
+            if (provider is null)
+            {
+                continue;
+            }
+
             foreach (AIModelInfo model in provider.Models ?? [])
             {
                 if (model is not null)
                 {
-                    CostProcessing.ProcessModel(model, ModelInfoJsonContext.Default.Options);
+                    CostProcessing.ProcessModel(model, ModelInfoJsonContext.Default.AIModelCostInfo);
                 }
             }
         }
