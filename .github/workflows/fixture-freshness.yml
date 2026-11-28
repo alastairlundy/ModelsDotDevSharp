@@ -1,0 +1,172 @@
+# Fixture freshness enforcement (DECISIONS-ModelsDotDevDotnet-payload-tests.md#T013, #D011).
+#
+# Artifact-form decision, made at implementation start with human input: this is a workflow, not a
+# test. A freshness test would only fail when someone runs the suite, while this scheduled workflow
+# enforces the 14-day re-mirror cadence on the calendar even when nobody is running tests locally.
+# A human confirms the live suite's green precondition before any refresh lands; this workflow only
+# reports staleness, it never refreshes anything itself.
+#
+# It fails when a curated fragment's lastRemirrored timestamp in
+# tests/ModelsDotDevSharp.Tests/fixture-freshness-manifest.json exceeds maxAgeDays (14), or when a
+# release landed after a fragment's last re-mirror (D011 requires a re-mirror on every new release).
+
+name: Fixture Freshness
+
+on:
+  schedule:
+    # Weekly - the cadence is 14 days, so a stale fragment goes red within a week of its deadline.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - tests/ModelsDotDevSharp.Tests/fixture-freshness-manifest.json
+      - tests/ModelsDotDevSharp.Tests/PayloadContractTests.cs
+      - .github/workflows/fixture-freshness.yml
+  pull_request:
+    paths:
+      - tests/ModelsDotDevSharp.Tests/fixture-freshness-manifest.json
+      - tests/ModelsDotDevSharp.Tests/PayloadContractTests.cs
+      - .github/workflows/fixture-freshness.yml
+
+permissions:
+  contents: read
+
+jobs:
+  freshness:
+    name: Enforce fixture freshness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Enforce fixture freshness
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          MANIFEST="tests/ModelsDotDevSharp.Tests/fixture-freshness-manifest.json"
+          PINS="tests/ModelsDotDevSharp.Tests/PayloadContractTests.cs"
+
+          fail() {
+            echo "::error::$1"
+            shift
+            printf '%s\n' "$@"
+            exit 1
+          }
+
+          [ -f "$MANIFEST" ] || fail "Fixture freshness manifest not found at $MANIFEST. Recreate it next to the curated fragments in PayloadContractTests.cs, one lastRemirrored entry per fragment, then re-run this workflow."
+          [ -f "$PINS" ] || fail "Regression-pin file not found at $PINS."
+
+          jq -e . "$MANIFEST" >/dev/null 2>&1 \
+            || fail "$MANIFEST is not valid JSON. Fix the syntax so the freshness check can read it."
+
+          jq -e '.maxAgeDays | (type == "number") and (. > 0)' "$MANIFEST" >/dev/null \
+            || fail "$MANIFEST must carry a positive numeric maxAgeDays (the refresh cadence in days)."
+
+          jq -e '
+            (.fragments | (type == "array") and (length > 0))
+            and (.fragments | all(.[];
+                  (.test | (type == "string") and (length > 0))
+                  and (.lastRemirrored | (type == "string") and (length > 0))))
+            and ((.excludedPins // []) | all(.[];
+                  (.test | (type == "string") and (length > 0))
+                  and (.reason | (type == "string") and (length > 0))))
+          ' "$MANIFEST" >/dev/null \
+            || fail "$MANIFEST must carry a non-empty fragments array (each entry with a test name and a lastRemirrored timestamp) and, for pins deliberately without a fragment, an excludedPins entry with a written reason."
+
+          # --- Coverage: every pin in PayloadContractTests.cs is accounted for, and vice versa. ---
+          pin_tests="$(grep -E '^[[:space:]]*public async Task [A-Za-z0-9_]+\(' "$PINS" \
+            | sed -E 's/.*Task[[:space:]]+([A-Za-z0-9_]+)\(.*/\1/' | sort -u)"
+          [ -n "$pin_tests" ] \
+            || fail "No 'public async Task <name>()' tests were found in $PINS, so freshness coverage cannot be verified. If the pin declarations changed shape, update this workflow."
+
+          manifest_tests="$(jq -r '.fragments[].test' "$MANIFEST"; jq -r '.excludedPins[]?.test' "$MANIFEST")"
+
+          unaccounted=""
+          while IFS= read -r pin; do
+            [ -z "$pin" ] && continue
+            if ! grep -Fxq "$pin" <<<"$manifest_tests"; then
+              unaccounted="${unaccounted}${unaccounted:+, }$pin"
+            fi
+          done <<<"$pin_tests"
+          if [ -n "$unaccounted" ]; then
+            fail "Pins in $PINS have no manifest entry in $MANIFEST: $unaccounted" \
+              "Every curated fixture fragment needs a lastRemirrored entry (or an excludedPins entry with a written reason)." \
+              "Refresh precondition if a fragment is stale: re-mirror from live payloads only while the live suite is green, with a human confirming the green precondition before the refresh lands."
+          fi
+
+          orphans=""
+          while IFS= read -r entry; do
+            [ -z "$entry" ] && continue
+            if ! grep -Fxq "$entry" <<<"$pin_tests"; then
+              orphans="${orphans}${orphans:+, }$entry"
+            fi
+          done <<<"$manifest_tests"
+          if [ -n "$orphans" ]; then
+            fail "Manifest entries name pins that no longer exist in $PINS: $orphans" \
+              "Remove or rename these entries so the manifest describes the pins actually in the file."
+          fi
+
+          # --- Age check: no fragment may exceed maxAgeDays without a re-mirror. ---
+          max_age_days="$(jq -r '.maxAgeDays' "$MANIFEST")"
+          now="$(date -u +%s)"
+          stale=()
+
+          while IFS=$'\t' read -r test stamp; do
+            if ! stamp_epoch="$(date -u -d "$stamp" +%s 2>/dev/null)"; then
+              fail "Fragment '$test' carries an unparseable lastRemirrored timestamp '$stamp'." \
+                "Use UTC RFC 3339, e.g. 2026-11-27T19:42:02Z."
+            fi
+            if [ "$stamp_epoch" -gt "$now" ]; then
+              fail "Fragment '$test' carries a future lastRemirrored timestamp ($stamp)." \
+                "Timestamps record a re-mirror that already happened; fix the clock skew or the entry."
+            fi
+            age=$(( now - stamp_epoch ))
+            if [ "$age" -gt $(( max_age_days * 86400 )) ]; then
+              stale+=("$test - last re-mirrored $stamp ($(( age / 86400 )) days old)")
+            fi
+          done < <(jq -r '.fragments[] | [.test, .lastRemirrored] | @tsv' "$MANIFEST")
+
+          if [ "${#stale[@]}" -gt 0 ]; then
+            fail "Fixture freshness exceeded ${max_age_days} days without a re-mirror. Stale fragments:" \
+              "$(printf '  - %s\n' "${stale[@]}")" \
+              "Refresh precondition: re-mirror these fragments from live payloads only while the live suite is green, and have a human confirm the green precondition before the refresh lands. Update lastRemirrored for every refreshed fragment in $MANIFEST in the same change."
+          fi
+
+          # --- Release check: a new release also requires a re-mirror (D011). ---
+          # The releases list is used rather than releases/latest because this repository publishes
+          # pre-releases only, and releases/latest ignores (404s on) pre-releases.
+          releases='[]'
+          repo="${GITHUB_REPOSITORY:-}"
+          if [ -z "$repo" ]; then
+            echo "::warning::GITHUB_REPOSITORY is unset, so the release trigger check was skipped. The age check above still ran."
+          elif releases="$(gh api "repos/${repo}/releases?per_page=10")"; then
+            :
+          else
+            releases='[]'
+            echo "::warning::Could not list releases from the GitHub API, so the release trigger check was skipped. The age check above still ran."
+          fi
+
+          release_tag="$(jq -r '[.[] | select(.published_at != null)][0].tag_name // empty' <<<"$releases")"
+          release_at="$(jq -r '[.[] | select(.published_at != null)][0].published_at // empty' <<<"$releases")"
+
+          if [ -n "$release_at" ]; then
+            release_epoch="$(date -u -d "$release_at" +%s)"
+            missed=()
+
+            while IFS=$'\t' read -r test stamp; do
+              stamp_epoch="$(date -u -d "$stamp" +%s)"
+              if [ "$release_epoch" -gt "$stamp_epoch" ]; then
+                missed+=("$test - last re-mirrored $stamp")
+              fi
+            done < <(jq -r '.fragments[] | [.test, .lastRemirrored] | @tsv' "$MANIFEST")
+
+            if [ "${#missed[@]}" -gt 0 ]; then
+              fail "Release $release_tag (published $release_at) landed after the last re-mirror of some curated fragments, and D011 requires a re-mirror on every new release. Affected fragments:" \
+                "$(printf '  - %s\n' "${missed[@]}")" \
+                "Refresh precondition: re-mirror these fragments from live payloads only while the live suite is green, and have a human confirm the green precondition before the refresh lands. Update lastRemirrored for every refreshed fragment in $MANIFEST in the same change."
+            fi
+          fi
+
+          echo "All curated fixture fragments are within ${max_age_days} days of their last re-mirror$( [ -n "$release_at" ] && echo ", and release $release_tag needs no re-mirror" )."

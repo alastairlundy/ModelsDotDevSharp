@@ -1,0 +1,49 @@
+{
+  "manifestVersion": 1,
+  "maxAgeDays": 14,
+  "cadence": "Curated fixture fragments are re-mirrored from live payloads every new release or every 14 days, whichever comes first (DECISIONS-ModelsDotDevDotnet-payload-tests.md#D011). The enforcement artifact (.github/workflows/fixture-freshness.yml) fails when any lastRemirrored timestamp exceeds maxAgeDays without a new release, and when a release lands after a fragment's last re-mirror.",
+  "seededFrom": "The fragments' current state: commit 2e86b21 (2026-11-27T19:42:02Z), the last change to PayloadContractTests.cs.",
+  "refreshProcedure": {
+    "precondition": "A refresh re-mirrors fragments from live payloads only while the live suite (LivePayloadTests) is green, so a re-mirror never bakes in unresolved drift. Re-mirroring regenerates expected values from live data through the library, pinning current behavior; the live layer owns drift detection.",
+    "confirmation": "A human confirms the green precondition before the refresh lands.",
+    "steps": [
+      "Run the live suite (dotnet test src/ModelsDotDevSharp.slnx) and confirm it is green.",
+      "Have a human confirm the green precondition stated above.",
+      "Re-mirror each curated fragment in PayloadContractTests.cs from the current live payload through the library, regenerating the expected values from that live data.",
+      "Set every entry's lastRemirrored below to the re-mirror time (UTC, RFC 3339, e.g. 2026-11-27T19:42:02Z) in the same change that lands the refreshed fragments."
+    ]
+  },
+  "fragments": [
+    {
+      "test": "ApiJson_StringEnums_RegressionPin_PastEnumDeserializationBug",
+      "source": "/api.json",
+      "lastRemirrored": "2026-11-27T19:42:02Z"
+    },
+    {
+      "test": "ExperimentalModes_CostAndProvider_RegressionPin_PastAllZeroCostBug",
+      "source": "/api.json",
+      "lastRemirrored": "2026-11-27T19:42:02Z"
+    },
+    {
+      "test": "ApiJson_UnmappedFields_RegressionPin_PastMissingPropertiesBug",
+      "source": "/api.json",
+      "lastRemirrored": "2026-11-27T19:42:02Z"
+    },
+    {
+      "test": "ModelsJson_UnmappedFields_RegressionPin_PastMissingPropertiesBug",
+      "source": "/models.json",
+      "lastRemirrored": "2026-11-27T19:42:02Z"
+    },
+    {
+      "test": "ApiJson_ContextOverrides_RegressionPin_OfflinePipelineAllEntryPoints",
+      "source": "/api.json",
+      "lastRemirrored": "2026-11-27T19:42:02Z"
+    }
+  ],
+  "excludedPins": [
+    {
+      "test": "StaleProperties_RegressionPin_PastRetiredSurfaceBug",
+      "reason": "Reflection pin over the public type surface: it carries no mirrored payload fragment, so no re-mirror timestamp applies to it."
+    }
+  ]
+}
