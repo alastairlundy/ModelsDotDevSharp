@@ -445,8 +445,16 @@ public class LivePayloadTests
         List<InvariantFailure> failures = [];
         int checkedObjects = 0;
 
-        if (live.Root.TryGetProperty("providers", out JsonElement rawProviders)
-            && rawProviders.ValueKind == JsonValueKind.Object)
+        if (!live.Root.TryGetProperty("providers", out JsonElement rawProviders)
+            || rawProviders.ValueKind != JsonValueKind.Object)
+        {
+            string actual = live.Root.TryGetProperty("providers", out JsonElement actualProviders)
+                ? actualProviders.ValueKind.ToString()
+                : "missing";
+            Fail(failures, "$.providers",
+                $"the catalog `providers` container arrived as {actual}; an object was expected", live.Root);
+        }
+        else
         {
             foreach (JsonProperty providerEntry in rawProviders.EnumerateObject())
             {
@@ -487,8 +495,16 @@ public class LivePayloadTests
             }
         }
 
-        if (live.Root.TryGetProperty("models", out JsonElement rawCatalogModels)
-            && rawCatalogModels.ValueKind == JsonValueKind.Object)
+        if (!live.Root.TryGetProperty("models", out JsonElement rawCatalogModels)
+            || rawCatalogModels.ValueKind != JsonValueKind.Object)
+        {
+            string actual = live.Root.TryGetProperty("models", out JsonElement actualModels)
+                ? actualModels.ValueKind.ToString()
+                : "missing";
+            Fail(failures, "$.models",
+                $"the catalog `models` container arrived as {actual}; an object was expected", live.Root);
+        }
+        else
         {
             foreach (JsonProperty modelEntry in rawCatalogModels.EnumerateObject())
             {
@@ -1115,6 +1131,12 @@ public class LivePayloadTests
             AIModelCostTier[] tiers = cost.Tiers ?? [];
             for (int index = 0; index < tiers.Length; index++)
             {
+                if (tiers[index] is null)
+                {
+                    Fail(failures, $"{costPath}.tiers[{index}]", "a tier deserialized to null", dump);
+                    continue;
+                }
+
                 foreach (string key in TierWireKeys)
                 {
                     if (TierValue(tiers[index], key) is { } value && value < 0)
@@ -1203,6 +1225,7 @@ public class LivePayloadTests
         }
 
         // Every context_over_* wire key must resolve into the typed ContextOverrides tree.
+        // A null wire value carries no override: it must not resolve to a typed entry.
         foreach (JsonProperty member in rawCost.EnumerateObject())
         {
             if (!member.Name.StartsWith(ContextOverridePrefix, StringComparison.Ordinal))
@@ -1211,6 +1234,17 @@ public class LivePayloadTests
             }
 
             string suffix = member.Name[ContextOverridePrefix.Length..];
+            if (member.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            {
+                if (mapped.ContextOverrides.ContainsKey(suffix))
+                {
+                    Fail(failures, $"{path}.{member.Name}",
+                        $"wire key `{member.Name}` is null but resolved into ContextOverrides[\"{suffix}\"]", dump);
+                }
+
+                continue;
+            }
+
             if (!mapped.ContextOverrides.TryGetValue(suffix, out AIModelCostInfo? resolved) || resolved is null)
             {
                 Fail(failures, $"{path}.{member.Name}",
@@ -1221,6 +1255,11 @@ public class LivePayloadTests
             if (member.Value.ValueKind == JsonValueKind.Object)
             {
                 CheckRawCost(failures, member.Value, resolved, $"{path}.{member.Name}", dump);
+            }
+            else
+            {
+                Fail(failures, $"{path}.{member.Name}",
+                    $"wire key `{member.Name}` arrived as {member.Value.ValueKind}; an object or null was expected", dump);
             }
         }
     }
@@ -1799,7 +1838,8 @@ public class LivePayloadTests
             return "the experimental mode `{cost, provider}` shape";
         }
 
-        if (key is "cache_read" or "cache_write")
+        if (key is "cache_read" or "cache_write"
+            && (path.Contains(".tiers[", StringComparison.Ordinal) || path.Contains(".tier.", StringComparison.Ordinal)))
         {
             return "tier `cache_read`/`cache_write`/`reasoning`";
         }
@@ -1880,20 +1920,52 @@ public class LivePayloadTests
                 // product's converter would build) deserializes strictly, models included.
                 foreach (JsonProperty provider in root.EnumerateObject())
                 {
-                    if (provider.Value.ValueKind == JsonValueKind.Object
-                        && provider.Value.TryGetProperty("models", out JsonElement apiModels)
-                        && apiModels.ValueKind == JsonValueKind.Object)
+                    if (provider.Value.ValueKind != JsonValueKind.Object)
                     {
+                        string providerPath = $"$.['{provider.Name}']";
+                        string providerDump = DumpAt(root, providerPath) ?? Trim(provider.Value.GetRawText());
+                        failures.Add($"endpoint: {endpoint} | JSON path: {providerPath} "
+                            + $"| gap: {GapFor(endpoint, providerPath, LastPathSegment(providerPath))} | object (trimmed): {Trim(providerDump)} "
+                            + $"| failure: Expected a provider object but found {provider.Value.ValueKind}.");
+                        continue;
+                    }
+
+                    if (provider.Value.TryGetProperty("models", out JsonElement apiModels))
+                    {
+                        if (apiModels.ValueKind != JsonValueKind.Object)
+                        {
+                            string modelsPath = $"$.['{provider.Name}'].models";
+                            string modelsDump = DumpAt(root, modelsPath) ?? Trim(apiModels.GetRawText());
+                            failures.Add($"endpoint: {endpoint} | JSON path: {modelsPath} "
+                                + $"| gap: {GapFor(endpoint, modelsPath, LastPathSegment(modelsPath))} | object (trimmed): {Trim(modelsDump)} "
+                                + $"| failure: Expected JSON object for \"models\" but found {apiModels.ValueKind}.");
+                            continue;
+                        }
+
                         foreach (JsonProperty model in apiModels.EnumerateObject())
                         {
+                            string modelPath = $"$.['{provider.Name}'].models['{model.Name}']";
                             if (model.Value.ValueKind == JsonValueKind.Null)
                             {
-                                string modelPath = $"$.['{provider.Name}'].models['{model.Name}']";
                                 string modelDump = DumpAt(root, modelPath) ?? Trim(model.Value.GetRawText());
                                 failures.Add($"endpoint: {endpoint} | JSON path: {modelPath} "
                                     + $"| gap: {GapFor(endpoint, modelPath, LastPathSegment(modelPath))} | object (trimmed): {Trim(modelDump)} "
                                     + $"| failure: Strict deserialization returned null; expected a record object.");
+                                continue;
                             }
+
+                            if (model.Value.ValueKind != JsonValueKind.Object)
+                            {
+                                string modelDump = DumpAt(root, modelPath) ?? Trim(model.Value.GetRawText());
+                                failures.Add($"endpoint: {endpoint} | JSON path: {modelPath} "
+                                    + $"| gap: {GapFor(endpoint, modelPath, LastPathSegment(modelPath))} | object (trimmed): {Trim(modelDump)} "
+                                    + $"| failure: Expected a record object but found {model.Value.ValueKind}.");
+                                continue;
+                            }
+
+                            deserialized++;
+                            DeserializeStrict(failures, endpoint, modelPath, model.Value.GetRawText(),
+                                SchemaWalkJsonContext.Default.AIModelInfo, root);
                         }
                     }
 
@@ -1931,19 +2003,53 @@ public class LivePayloadTests
                 {
                     foreach (JsonProperty provider in providers.EnumerateObject())
                     {
-                        if (provider.Value.ValueKind == JsonValueKind.Object
-                            && provider.Value.TryGetProperty("models", out JsonElement catalogModels)
-                            && catalogModels.ValueKind == JsonValueKind.Object)
+                        if (provider.Value.ValueKind != JsonValueKind.Object)
                         {
-                            foreach (JsonProperty model in catalogModels.EnumerateObject())
+                            string providerPath = $"$.providers['{provider.Name}']";
+                            string providerDump = DumpAt(root, providerPath) ?? Trim(provider.Value.GetRawText());
+                            failures.Add($"endpoint: {endpoint} | JSON path: {providerPath} "
+                                + $"| gap: {GapFor(endpoint, providerPath, LastPathSegment(providerPath))} | object (trimmed): {Trim(providerDump)} "
+                                + $"| failure: Expected a provider object but found {provider.Value.ValueKind}.");
+                            continue;
+                        }
+
+                        if (provider.Value.TryGetProperty("models", out JsonElement catalogModels))
+                        {
+                            if (catalogModels.ValueKind != JsonValueKind.Object)
                             {
-                                if (model.Value.ValueKind == JsonValueKind.Null)
+                                string modelsPath = $"$.providers['{provider.Name}'].models";
+                                string modelsDump = DumpAt(root, modelsPath) ?? Trim(catalogModels.GetRawText());
+                                failures.Add($"endpoint: {endpoint} | JSON path: {modelsPath} "
+                                    + $"| gap: {GapFor(endpoint, modelsPath, LastPathSegment(modelsPath))} | object (trimmed): {Trim(modelsDump)} "
+                                    + $"| failure: Expected JSON object for \"models\" but found {catalogModels.ValueKind}.");
+                                continue;
+                            }
+                            else
+                            {
+                                foreach (JsonProperty model in catalogModels.EnumerateObject())
                                 {
                                     string modelPath = $"$.providers['{provider.Name}'].models['{model.Name}']";
-                                    string modelDump = DumpAt(root, modelPath) ?? Trim(model.Value.GetRawText());
-                                    failures.Add($"endpoint: {endpoint} | JSON path: {modelPath} "
-                                        + $"| gap: {GapFor(endpoint, modelPath, LastPathSegment(modelPath))} | object (trimmed): {Trim(modelDump)} "
-                                        + $"| failure: Strict deserialization returned null; expected a record object.");
+                                    if (model.Value.ValueKind == JsonValueKind.Null)
+                                    {
+                                        string modelDump = DumpAt(root, modelPath) ?? Trim(model.Value.GetRawText());
+                                        failures.Add($"endpoint: {endpoint} | JSON path: {modelPath} "
+                                            + $"| gap: {GapFor(endpoint, modelPath, LastPathSegment(modelPath))} | object (trimmed): {Trim(modelDump)} "
+                                            + $"| failure: Strict deserialization returned null; expected a record object.");
+                                        continue;
+                                    }
+
+                                    if (model.Value.ValueKind != JsonValueKind.Object)
+                                    {
+                                        string modelDump = DumpAt(root, modelPath) ?? Trim(model.Value.GetRawText());
+                                        failures.Add($"endpoint: {endpoint} | JSON path: {modelPath} "
+                                            + $"| gap: {GapFor(endpoint, modelPath, LastPathSegment(modelPath))} | object (trimmed): {Trim(modelDump)} "
+                                            + $"| failure: Expected a record object but found {model.Value.ValueKind}.");
+                                        continue;
+                                    }
+
+                                    deserialized++;
+                                    DeserializeStrict(failures, endpoint, modelPath, model.Value.GetRawText(),
+                                        SchemaWalkJsonContext.Default.AIModelInfo, root);
                                 }
                             }
                         }
@@ -2043,9 +2149,18 @@ public class LivePayloadTests
     /// Rewrites one provider object's <c>models</c> map into the array the product's flattening
     /// converter would build, so the strict context can deserialize a whole provider - models
     /// included - without the product's converter, which hardcodes the product's contexts.
+    /// A non-object <c>models</c> member is rejected before normalization so arrays and other
+    /// wrong shapes never reach the array-expecting strict shape.
     /// </summary>
     private static string FlattenProviderModels(JsonElement provider)
     {
+        if (provider.ValueKind == JsonValueKind.Object
+            && provider.TryGetProperty("models", out JsonElement models)
+            && models.ValueKind is not JsonValueKind.Object and not JsonValueKind.Null and not JsonValueKind.Undefined)
+        {
+            throw new JsonException($"Expected StartObject for \"models\" map. Got {models.ValueKind}.");
+        }
+
         using MemoryStream buffer = new();
         using (Utf8JsonWriter writer = new(buffer))
         {
@@ -2390,7 +2505,32 @@ public class LivePayloadTests
         next = current;
         if (current.ValueKind == JsonValueKind.Object)
         {
-            return current.TryGetProperty(segment, out next);
+            if (current.TryGetProperty(segment, out next))
+            {
+                return true;
+            }
+
+            // A flattened models index (for example `models[0]` from the strict provider
+            // deserialization) names the Nth entry of the original wire models map, so resolve
+            // a numeric segment against the map's enumeration order to display the offending
+            // model instead of the entire map.
+            if (int.TryParse(segment, NumberStyles.None, CultureInfo.InvariantCulture, out int objectIndex)
+                && objectIndex >= 0)
+            {
+                int seen = 0;
+                foreach (JsonProperty member in current.EnumerateObject())
+                {
+                    if (seen == objectIndex)
+                    {
+                        next = member.Value;
+                        return true;
+                    }
+
+                    seen++;
+                }
+            }
+
+            return false;
         }
 
         if (current.ValueKind == JsonValueKind.Array
