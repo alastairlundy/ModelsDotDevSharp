@@ -23,8 +23,10 @@
  */
 
 using System.Globalization;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -603,7 +605,7 @@ public class LivePayloadTests
         IReadOnlyList<SchemaWalkAllowlistEntry> allowlist = SchemaWalkAllowlist.Entries;
         await Assert.That(allowlist.All(entry => !string.IsNullOrWhiteSpace(entry.Reason))).IsTrue();
 
-        HashSet<string> payloadKeys = CollectPayloadKeys(payloads);
+        Dictionary<Type, HashSet<string>> presentByType = CollectPresentKeysByType(payloads);
 
         List<string> failures = [];
         foreach ((string endpoint, JsonElement root) in payloads)
@@ -616,8 +618,7 @@ public class LivePayloadTests
                 _ => throw new InvalidOperationException($"The byte-level pass has no walk shape for '{endpoint}'."),
             };
 
-            CollectDriftFindings(failures, endpoint, report, root, payloadKeys);
-        }
+            CollectDriftFindings(failures, endpoint, report, root, presentByType);        }
 
         if (failures.Count > 0)
         {
@@ -1856,25 +1857,33 @@ public class LivePayloadTests
 
     /// <summary>
     /// Collects both drift directions from one endpoint's walk report: every unmapped key (through
-    /// the key-mapping collector above), plus every mapped property whose key no fetched payload
-    /// object anywhere carries. The global presence set is what separates a genuinely retired stale
-    /// property from an optional field absent from some objects, or from one endpoint's view of a
-    /// shared type - the latter is not staleness.
+    /// the key-mapping collector above), plus every mapped property no fetched object mapped to
+    /// its declaring type carries. Presence is tracked per mapped type and wire name, so an
+    /// optional field absent from some objects of its own type is not stale, but a key carried
+    /// only by other types or as a dictionary key does not mask genuine retirement.
     /// </summary>
     private static void CollectDriftFindings(
         List<string> failures,
         string endpoint,
         SchemaWalkReport report,
         JsonElement root,
-        IReadOnlySet<string> payloadKeys)
+        IReadOnlyDictionary<Type, HashSet<string>> presentByType)
     {
         CollectUnmappedKeys(failures, endpoint, report, root);
 
-        foreach (IGrouping<string, SchemaDriftFinding> group in report.Findings
+        foreach (IGrouping<(Type? DeclaringType, string Key), SchemaDriftFinding> group in report.Findings
             .Where(finding => finding.Kind == SchemaDriftKind.StaleProperty)
-            .GroupBy(finding => finding.Key, StringComparer.Ordinal))
+            .GroupBy(finding => (finding.DeclaringType, finding.Key)))
         {
-            if (payloadKeys.Contains(group.Key))
+            if (group.Key.DeclaringType is { } declaringType
+                && presentByType.TryGetValue(declaringType, out HashSet<string>? present)
+                && present.Contains(group.Key.Key))
+            {
+                continue;
+            }
+
+            if (group.Key.DeclaringType is null
+                && presentByType.Values.Any(keys => keys.Contains(group.Key.Key)))
             {
                 continue;
             }
@@ -1882,45 +1891,194 @@ public class LivePayloadTests
             SchemaDriftFinding first = group.First();
             string dump = DumpAt(root, first.Path)
                 ?? "(the offending object could not be resolved in the fetched payload)";
-            failures.Add($"{group.Count()} object(s) on {endpoint} carry no `{group.Key}` member, and no fetched "
-                + "payload object anywhere carries it either. Gap list (expected-red until the mapping-fix "
+            failures.Add($"{group.Count()} object(s) on {endpoint} carry no `{group.Key.Key}` member, and no fetched "
+                + $"object mapped to {(group.Key.DeclaringType?.Name ?? "an unknown type")} carries it either. Gap list (expected-red until the mapping-fix "
                 + $"session lands): {RetiredStalePropertiesGap}. JSON path: {first.Path} "
                 + $"| gap: {RetiredStalePropertiesGap} | object (trimmed): {Trim(dump)}");
         }
     }
 
-    /// <summary>Every JSON member name that appears anywhere in the fetched payloads.</summary>
-    private static HashSet<string> CollectPayloadKeys((string Endpoint, JsonElement Root)[] payloads)
+    /// <summary>
+    /// Every wire name carried by JSON members on objects mapped to each type, across all
+    /// endpoints that map to that type. Only members on objects walked as that mapped type count;
+    /// dictionary keys (provider/model/mode ids) and members on other types do not.
+    /// </summary>
+    private static Dictionary<Type, HashSet<string>> CollectPresentKeysByType((string Endpoint, JsonElement Root)[] payloads)
     {
-        HashSet<string> keys = new(StringComparer.Ordinal);
-        foreach ((_, JsonElement root) in payloads)
+        Dictionary<Type, HashSet<string>> present = new();
+
+        foreach ((string endpoint, JsonElement root) in payloads)
         {
-            CollectPayloadKeys(root, keys);
+            switch (endpoint)
+            {
+                case ApiJsonPath:
+                    if (root.ValueKind == JsonValueKind.Object)
+                    {
+                        foreach (JsonProperty provider in root.EnumerateObject())
+                        {
+                            AccumulatePresentKeys(provider.Value, typeof(AIProviderInfo), present, idFromMapKey: true);
+                        }
+                    }
+
+                    break;
+
+                case ModelsJsonPath:
+                    if (root.ValueKind == JsonValueKind.Object)
+                    {
+                        foreach (JsonProperty record in root.EnumerateObject())
+                        {
+                            AccumulatePresentKeys(record.Value, typeof(AIModelMetadata), present, idFromMapKey: true);
+                        }
+                    }
+
+                    break;
+
+                case CatalogJsonPath:
+                    if (root.ValueKind == JsonValueKind.Object)
+                    {
+                        if (root.TryGetProperty("providers", out JsonElement providers)
+                            && providers.ValueKind == JsonValueKind.Object)
+                        {
+                            foreach (JsonProperty provider in providers.EnumerateObject())
+                            {
+                                AccumulatePresentKeys(provider.Value, typeof(AIProviderInfo), present, idFromMapKey: true);
+                            }
+                        }
+
+                        if (root.TryGetProperty("models", out JsonElement models)
+                            && models.ValueKind == JsonValueKind.Object)
+                        {
+                            foreach (JsonProperty record in models.EnumerateObject())
+                            {
+                                AccumulatePresentKeys(record.Value, typeof(AIModelMetadata), present, idFromMapKey: true);
+                            }
+                        }
+                    }
+
+                    break;
+            }
         }
 
-        return keys;
+        return present;
     }
 
-    private static void CollectPayloadKeys(JsonElement element, HashSet<string> keys)
+    private static void AccumulatePresentKeys(
+        JsonElement value,
+        Type declaredType,
+        Dictionary<Type, HashSet<string>> present,
+        bool idFromMapKey)
     {
-        switch (element.ValueKind)
+        Type type = Nullable.GetUnderlyingType(declaredType) ?? declaredType;
+
+        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Dictionary<,>))
         {
-            case JsonValueKind.Object:
-                foreach (JsonProperty member in element.EnumerateObject())
+            if (value.ValueKind != JsonValueKind.Object)
+            {
+                return;
+            }
+
+            Type valueType = type.GetGenericArguments()[1];
+            if (!SchemaWalk.MappedTypes.Contains(valueType))
+            {
+                return;
+            }
+
+            foreach (JsonProperty member in value.EnumerateObject())
+            {
+                AccumulatePresentKeys(member.Value, valueType, present, idFromMapKey: true);
+            }
+
+            return;
+        }
+
+        if (type.IsArray)
+        {
+            Type? elementType = type.GetElementType();
+            if (elementType is null)
+            {
+                return;
+            }
+
+            if (value.ValueKind == JsonValueKind.Object && SchemaWalk.MappedTypes.Contains(elementType))
+            {
+                foreach (JsonProperty member in value.EnumerateObject())
                 {
-                    keys.Add(member.Name);
-                    CollectPayloadKeys(member.Value, keys);
+                    AccumulatePresentKeys(member.Value, elementType, present, idFromMapKey: true);
+                }
+            }
+            else if (value.ValueKind == JsonValueKind.Array && SchemaWalk.MappedTypes.Contains(elementType))
+            {
+                foreach (JsonElement item in value.EnumerateArray())
+                {
+                    AccumulatePresentKeys(item, elementType, present, idFromMapKey: false);
+                }
+            }
+
+            return;
+        }
+
+        if (typeof(System.Collections.IEnumerable).IsAssignableFrom(type) && type.IsGenericType)
+        {
+            Type elementType = type.GetGenericArguments()[0];
+            if (value.ValueKind == JsonValueKind.Array && SchemaWalk.MappedTypes.Contains(elementType))
+            {
+                foreach (JsonElement item in value.EnumerateArray())
+                {
+                    AccumulatePresentKeys(item, elementType, present, idFromMapKey: false);
+                }
+            }
+
+            return;
+        }
+
+        if (value.ValueKind == JsonValueKind.Object && SchemaWalk.MappedTypes.Contains(type))
+        {
+            AccumulatePresentKeysFromObject(value, type, present, idFromMapKey);
+        }
+    }
+
+    private static void AccumulatePresentKeysFromObject(
+        JsonElement element,
+        Type type,
+        Dictionary<Type, HashSet<string>> present,
+        bool idFromMapKey)
+    {
+        IReadOnlySet<string> expectedKeys = SchemaWalk.ExpectedKeys(type);
+        if (!present.TryGetValue(type, out HashSet<string>? keys))
+        {
+            keys = new HashSet<string>(StringComparer.Ordinal);
+            present[type] = keys;
+        }
+
+        if (idFromMapKey && expectedKeys.Contains("id"))
+        {
+            keys.Add("id");
+        }
+
+        foreach (JsonProperty member in element.EnumerateObject())
+        {
+            if (expectedKeys.Contains(member.Name))
+            {
+                keys.Add(member.Name);
+
+                PropertyInfo? property = type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                    .FirstOrDefault(candidate =>
+                        candidate.GetCustomAttribute<JsonPropertyNameAttribute>() is { Name: string name }
+                        && string.Equals(name, member.Name, StringComparison.Ordinal));
+                if (property is not null)
+                {
+                    AccumulatePresentKeys(member.Value, property.PropertyType, present, idFromMapKey: false);
                 }
 
-                break;
+                continue;
+            }
 
-            case JsonValueKind.Array:
-                foreach (JsonElement item in element.EnumerateArray())
-                {
-                    CollectPayloadKeys(item, keys);
-                }
-
-                break;
+            if (type == typeof(AIModelCostInfo)
+                && member.Name.StartsWith(ContextOverridePrefix, StringComparison.Ordinal)
+                && member.Value.ValueKind == JsonValueKind.Object)
+            {
+                AccumulatePresentKeys(member.Value, typeof(AIModelCostInfo), present, idFromMapKey: false);
+            }
         }
     }
 

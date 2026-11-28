@@ -102,7 +102,7 @@ public enum SchemaDriftKind
 /// member, so it already ends with <see cref="Key"/>; <see cref="Detail"/> carries extra
 /// context when the key is swallowed by extension data rather than being wholly absent.
 /// </summary>
-public sealed record SchemaDriftFinding(SchemaDriftKind Kind, string Path, string Key, string? Detail = null)
+public sealed record SchemaDriftFinding(SchemaDriftKind Kind, string Path, string Key, string? Detail = null, Type? DeclaringType = null)
 {
     public override string ToString() =>
         Detail is null ? $"{Kind} at {Path}" : $"{Kind} at {Path} ({Detail})";
@@ -362,9 +362,25 @@ public static class SchemaWalk
             {
                 // A dynamic extension-data key. When its value has a known shape (for
                 // example, context_over_* holds a cost object), walk it so drift inside the
-                // dynamic key is caught too.
+                // dynamic key is caught too. Null is allowed; anything non-object cannot be a
+                // cost override and must not pass validation.
                 if (shape.DynamicValueType is { } dynamicValueType)
                 {
+                    if (member.Value.ValueKind == JsonValueKind.Null)
+                    {
+                        continue;
+                    }
+
+                    if (member.Value.ValueKind != JsonValueKind.Object)
+                    {
+                        findings.Add(new SchemaDriftFinding(
+                            SchemaDriftKind.UnmappedKey,
+                            Member(path, member.Name),
+                            member.Name,
+                            $"unsupported {prefix}* override value of kind {member.Value.ValueKind}; expected a cost object or null"));
+                        continue;
+                    }
+
                     WalkValue(member.Value, dynamicValueType, Member(path, member.Name),
                         idFromMapKey: false, findings, allowlist);
                 }
@@ -395,7 +411,7 @@ public static class SchemaWalk
                 continue;
             }
 
-            findings.Add(new SchemaDriftFinding(SchemaDriftKind.StaleProperty, Member(path, key), key));
+            findings.Add(new SchemaDriftFinding(SchemaDriftKind.StaleProperty, Member(path, key), key, DeclaringType: type));
         }
     }
 
@@ -469,11 +485,55 @@ public static class SchemaWalk
 
         if (value.ValueKind == JsonValueKind.Object && s_mappedTypes.Contains(type))
         {
+            if (type == typeof(AIModelInterleaved))
+            {
+                ValidateInterleavedObject(value, path, findings);
+            }
+
             WalkObject(value, type, path, idFromMapKey, findings, allowlist);
+            return;
+        }
+
+        if (type == typeof(AIModelInterleaved))
+        {
+            // The product converter accepts bare booleans/null; anything else must be an object.
+            if (value.ValueKind is JsonValueKind.True or JsonValueKind.False or JsonValueKind.Null)
+            {
+                return;
+            }
+
+            findings.Add(new SchemaDriftFinding(
+                SchemaDriftKind.UnmappedKey,
+                path,
+                "interleaved",
+                $"unsupported interleaved value of kind {value.ValueKind}; expected a boolean or an object with a string \"field\""));
+            return;
         }
 
         // Scalars, booleans standing in for AIModelInterleaved, and free-form objects are
         // leaves: they have no keys of their own to check.
+    }
+
+    private static void ValidateInterleavedObject(JsonElement value, string path, List<SchemaDriftFinding> findings)
+    {
+        if (!value.TryGetProperty("field", out JsonElement field))
+        {
+            return;
+        }
+
+        bool valid = field.ValueKind == JsonValueKind.String
+            && field.GetString() is string name
+            && (string.Equals(name, "reasoning_content", StringComparison.Ordinal)
+                || string.Equals(name, "reasoning_details", StringComparison.Ordinal));
+
+        if (!valid)
+        {
+            findings.Add(new SchemaDriftFinding(
+                SchemaDriftKind.UnmappedKey,
+                Member(path, "field"),
+                "field",
+                "unsupported interleaved field value; expected \"reasoning_content\" or \"reasoning_details\""));
+        }
     }
 
     private static IReadOnlyDictionary<string, PropertyInfo> PropertiesByWireKey(Type type) =>
