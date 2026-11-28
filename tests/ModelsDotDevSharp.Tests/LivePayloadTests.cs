@@ -1400,13 +1400,15 @@ public class LivePayloadTests
                         "the object form of `interleaved` must map to a non-null AIModelInterleaved",
                         rawModel);
                 }
-                else if (TryWireString(raw, "field", out string fieldName)
-                    && !string.IsNullOrWhiteSpace(fieldName)
+                else if (raw.TryGetProperty("field", out JsonElement fieldElement)
                     && model.Interleaved.Field is null)
                 {
                     Fail(failures, path,
-                        $"`interleaved.field` = '{fieldName}' did not map to AIModelInterleavedField; an unrecognised "
-                        + "wire value silently degrades the object form to the bare boolean form",
+                        fieldElement.ValueKind == JsonValueKind.String
+                            ? $"`interleaved.field` = '{fieldElement.GetString()}' did not map to AIModelInterleavedField; an unrecognised "
+                                + "wire value silently degrades the object form to the bare boolean form"
+                            : $"`interleaved.field` arrived as {fieldElement.ValueKind}; a string was expected, so the "
+                                + "malformed object silently degrades to the bare boolean form",
                         rawModel);
                 }
 
@@ -1966,6 +1968,7 @@ public class LivePayloadTests
                             deserialized++;
                             DeserializeStrict(failures, endpoint, modelPath, model.Value.GetRawText(),
                                 SchemaWalkJsonContext.Default.AIModelInfo, root);
+                            ValidateStrictModelCosts(failures, endpoint, modelPath, model.Value, root);
                         }
                     }
 
@@ -2050,6 +2053,7 @@ public class LivePayloadTests
                                     deserialized++;
                                     DeserializeStrict(failures, endpoint, modelPath, model.Value.GetRawText(),
                                         SchemaWalkJsonContext.Default.AIModelInfo, root);
+                                    ValidateStrictModelCosts(failures, endpoint, modelPath, model.Value, root);
                                 }
                             }
                         }
@@ -2142,6 +2146,30 @@ public class LivePayloadTests
             failures.Add($"endpoint: {endpoint} | JSON path: {fullPath} "
                 + $"| gap: {GapFor(endpoint, fullPath, LastPathSegment(fullPath))} | object (trimmed): {Trim(dump)} "
                 + $"| failure: {exception.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Validates the cost extension data swallowed by <c>[JsonExtensionData]</c> during the
+    /// strict deserialization above. Unknown cost keys and invalid
+    /// <c>context_over_*</c> override values never throw in the strict context, so every
+    /// finding from <see cref="SchemaWalk.ValidateModelCosts"/> becomes a path-precise
+    /// byte-level failure here.
+    /// </summary>
+    private static void ValidateStrictModelCosts(
+        List<string> failures,
+        string endpoint,
+        string modelPath,
+        JsonElement rawModel,
+        JsonElement dumpRoot)
+    {
+        foreach (SchemaDriftFinding finding in SchemaWalk.ValidateModelCosts(rawModel, modelPath))
+        {
+            string dump = DumpAt(dumpRoot, finding.Path)
+                ?? "(the offending object could not be resolved in the fetched payload)";
+            failures.Add($"endpoint: {endpoint} | JSON path: {finding.Path} "
+                + $"| gap: {GapFor(endpoint, finding.Path, finding.Key)} | object (trimmed): {Trim(dump)} "
+                + $"| failure: {finding}");
         }
     }
 

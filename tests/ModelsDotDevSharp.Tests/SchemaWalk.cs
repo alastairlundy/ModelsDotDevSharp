@@ -54,6 +54,105 @@ internal sealed class StrictAIModelProviderShapeConverter() : JsonStringEnumConv
 internal sealed class StrictAIModelInterleavedFieldConverter() : JsonStringEnumConverter<AIModelInterleavedField>(allowIntegerValues: false);
 
 /// <summary>
+/// Strict test-only counterpart to the product's
+/// <see cref="Converters.InterleavedBooleanOrObjectConverter"/>. The product converter
+/// silently degrades a malformed object such as <c>{"field":123}</c> to the bare
+/// boolean form (<c>Field = null</c>); this converter throws instead, preserving only
+/// the valid boolean forms and the recognized field strings.
+/// </summary>
+internal sealed class StrictInterleavedBooleanOrObjectConverter : JsonConverter<AIModelInterleaved?>
+{
+    public override AIModelInterleaved? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.True)
+        {
+            return new AIModelInterleaved { Field = null };
+        }
+
+        if (reader.TokenType == JsonTokenType.False || reader.TokenType == JsonTokenType.Null)
+        {
+            return null;
+        }
+
+        if (reader.TokenType == JsonTokenType.StartObject)
+        {
+            string? fieldName = null;
+            bool hasField = false;
+            while (reader.Read())
+            {
+                if (reader.TokenType == JsonTokenType.EndObject)
+                {
+                    break;
+                }
+
+                if (reader.TokenType == JsonTokenType.PropertyName)
+                {
+                    string propertyName = reader.GetString() ?? string.Empty;
+                    reader.Read();
+                    if (string.Equals(propertyName, "field", StringComparison.Ordinal))
+                    {
+                        hasField = true;
+                        if (reader.TokenType != JsonTokenType.String)
+                        {
+                            throw new JsonException(
+                                $"Unsupported interleaved field value of kind {reader.TokenType}; expected a string \"reasoning_content\" or \"reasoning_details\".");
+                        }
+
+                        fieldName = reader.GetString();
+                    }
+                    else
+                    {
+                        throw new JsonException(
+                            $"Unsupported interleaved member \"{propertyName}\"; expected only \"field\".");
+                    }
+                }
+            }
+
+            if (!hasField)
+            {
+                return new AIModelInterleaved { Field = null };
+            }
+
+            return fieldName switch
+            {
+                "reasoning_content" => new AIModelInterleaved { Field = AIModelInterleavedField.ReasoningContent },
+                "reasoning_details" => new AIModelInterleaved { Field = AIModelInterleavedField.ReasoningDetails },
+                _ => throw new JsonException(
+                    $"Unsupported interleaved field value \"{fieldName}\"; expected \"reasoning_content\" or \"reasoning_details\"."),
+            };
+        }
+
+        throw new JsonException(
+            $"Unexpected token type {reader.TokenType}. Expected boolean, null, or object for AIModelInterleaved?.");
+    }
+
+    public override void Write(Utf8JsonWriter writer, AIModelInterleaved? value, JsonSerializerOptions options)
+    {
+        if (value is null)
+        {
+            writer.WriteBooleanValue(false);
+            return;
+        }
+
+        if (value.Field is null)
+        {
+            writer.WriteBooleanValue(true);
+            return;
+        }
+
+        writer.WriteStartObject();
+        writer.WritePropertyName("field");
+        writer.WriteStringValue(value.Field.Value switch
+        {
+            AIModelInterleavedField.ReasoningContent => "reasoning_content",
+            AIModelInterleavedField.ReasoningDetails => "reasoning_details",
+            _ => throw new ArgumentOutOfRangeException(nameof(value)),
+        });
+        writer.WriteEndObject();
+    }
+}
+
+/// <summary>
 /// The strict, test-only counterpart to the product's contexts. Every registered type
 /// deserializes with <see cref="JsonUnmappedMemberHandling.Disallow"/>, so a payload key with no
 /// mapped property throws instead of silently disappearing, and the four wire enums are read
@@ -97,7 +196,7 @@ internal sealed class StrictAIModelInterleavedFieldConverter() : JsonStringEnumC
     Converters =
     [
         typeof(FlexibleDateOnlyConverter),
-        typeof(InterleavedBooleanOrObjectConverter),
+        typeof(StrictInterleavedBooleanOrObjectConverter),
         typeof(StrictAIModelStatusConverter),
         typeof(StrictAIModelReasoningOptionTypeConverter),
         typeof(StrictAIModelProviderShapeConverter),
@@ -556,6 +655,123 @@ public static class SchemaWalk
         }
     }
 
+    /// <summary>
+    /// Strict cost extension-data validation. <see cref="AIModelCostInfo"/> carries
+    /// <c>[JsonExtensionData]</c>, which captures unknown members even when the strict
+    /// context sets <see cref="JsonUnmappedMemberHandling.Disallow"/> - so strict
+    /// deserialization alone accepts <c>cost.mystery_key</c> and unchecked
+    /// <c>cost.context_over_*.input</c> values. This validator rejects unknown keys and
+    /// recursively strict-deserializes each non-null <c>context_over_*</c> value so valid
+    /// overrides remain supported.
+    /// </summary>
+    public static IReadOnlyList<SchemaDriftFinding> ValidateCostTree(JsonElement costElement, string path)
+    {
+        List<SchemaDriftFinding> findings = [];
+        ValidateCostTreeRecursive(costElement, path, findings);
+        return findings;
+    }
+
+    /// <summary>
+    /// Validates every cost object reachable from one raw model object: its base
+    /// <c>cost</c> and each <c>experimental.modes.*.cost</c>.
+    /// </summary>
+    public static IReadOnlyList<SchemaDriftFinding> ValidateModelCosts(JsonElement rawModel, string path)
+    {
+        List<SchemaDriftFinding> findings = [];
+        if (rawModel.ValueKind != JsonValueKind.Object)
+        {
+            return findings;
+        }
+
+        if (rawModel.TryGetProperty("cost", out JsonElement cost)
+            && cost.ValueKind == JsonValueKind.Object)
+        {
+            ValidateCostTreeRecursive(cost, Member(path, "cost"), findings);
+        }
+
+        if (rawModel.TryGetProperty("experimental", out JsonElement experimental)
+            && experimental.ValueKind == JsonValueKind.Object
+            && experimental.TryGetProperty("modes", out JsonElement modes)
+            && modes.ValueKind == JsonValueKind.Object)
+        {
+            foreach (JsonProperty mode in modes.EnumerateObject())
+            {
+                if (mode.Value.ValueKind == JsonValueKind.Object
+                    && mode.Value.TryGetProperty("cost", out JsonElement modeCost)
+                    && modeCost.ValueKind == JsonValueKind.Object)
+                {
+                    string modePath = Member(Member(Member(path, "experimental"), "modes"), mode.Name);
+                    ValidateCostTreeRecursive(modeCost, Member(modePath, "cost"), findings);
+                }
+            }
+        }
+
+        return findings;
+    }
+
+    private static void ValidateCostTreeRecursive(
+        JsonElement costElement,
+        string path,
+        List<SchemaDriftFinding> findings)
+    {
+        if (costElement.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        IReadOnlySet<string> expectedKeys = ExpectedKeys(typeof(AIModelCostInfo));
+        foreach (JsonProperty member in costElement.EnumerateObject())
+        {
+            if (expectedKeys.Contains(member.Name))
+            {
+                continue;
+            }
+
+            if (member.Name.StartsWith("context_over_", StringComparison.Ordinal))
+            {
+                if (member.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+                {
+                    continue;
+                }
+
+                if (member.Value.ValueKind != JsonValueKind.Object)
+                {
+                    findings.Add(new SchemaDriftFinding(
+                        SchemaDriftKind.UnmappedKey,
+                        Member(path, member.Name),
+                        member.Name,
+                        $"unsupported context_over_* override value of kind {member.Value.ValueKind}; expected a cost object or null"));
+                    continue;
+                }
+
+                try
+                {
+                    JsonSerializer.Deserialize(
+                        member.Value.GetRawText(),
+                        SchemaWalkJsonContext.Default.AIModelCostInfo);
+                }
+                catch (JsonException exception)
+                {
+                    findings.Add(new SchemaDriftFinding(
+                        SchemaDriftKind.UnmappedKey,
+                        Member(path, member.Name),
+                        member.Name,
+                        $"context_over_* override failed strict deserialization: {exception.Message}"));
+                    continue;
+                }
+
+                ValidateCostTreeRecursive(member.Value, Member(path, member.Name), findings);
+                continue;
+            }
+
+            findings.Add(new SchemaDriftFinding(
+                SchemaDriftKind.UnmappedKey,
+                Member(path, member.Name),
+                member.Name,
+                "absorbed by the type's [JsonExtensionData] property instead of a mapped property"));
+        }
+    }
+
     private static IReadOnlyDictionary<string, PropertyInfo> PropertiesByWireKey(Type type) =>
         s_propertiesByWireKey.GetOrAdd(type, static candidate =>
         {
@@ -672,11 +888,48 @@ public class SchemaWalkTests
         JsonConverter[] converters = [.. SchemaWalkJsonContext.Default.Options.Converters];
 
         await Assert.That(converters.Any(converter => converter is FlexibleDateOnlyConverter)).IsTrue();
-        await Assert.That(converters.Any(converter => converter is InterleavedBooleanOrObjectConverter)).IsTrue();
+        await Assert.That(converters.Any(converter => converter is StrictInterleavedBooleanOrObjectConverter)).IsTrue();
         await Assert.That(converters.Any(converter => converter is JsonStringEnumConverter<AIModelStatus>)).IsTrue();
         await Assert.That(converters.Any(converter => converter is JsonStringEnumConverter<AIModelReasoningOptionType>)).IsTrue();
         await Assert.That(converters.Any(converter => converter is JsonStringEnumConverter<AIModelProviderShape>)).IsTrue();
         await Assert.That(converters.Any(converter => converter is JsonStringEnumConverter<AIModelInterleavedField>)).IsTrue();
+    }
+
+    [Test]
+    public async Task StrictInterleavedConverter_RejectsMalformedFieldValues_PreservesValidForms()
+    {
+        // Malformed: non-string field values must throw instead of degrading to Field = null.
+        string[] malformed = ["{\"field\":123}", "{\"field\":true}", "{\"field\":null}", "{\"field\":\"bogus\"}", "{\"rogue\":true}"];
+        foreach (string body in malformed)
+        {
+            bool threw = false;
+            try
+            {
+                JsonSerializer.Deserialize(body, SchemaWalkJsonContext.Default.AIModelInterleaved);
+            }
+            catch (JsonException)
+            {
+                threw = true;
+            }
+
+            await Assert.That(threw).IsTrue();
+        }
+
+        // Valid forms still bind: bare booleans/null and the recognized field strings.
+        AIModelInterleaved? bare = JsonSerializer.Deserialize("true", SchemaWalkJsonContext.Default.AIModelInterleaved);
+        await Assert.That(bare).IsNotNull();
+        await Assert.That(bare!.Field).IsNull();
+
+        await Assert.That(JsonSerializer.Deserialize("false", SchemaWalkJsonContext.Default.AIModelInterleaved)).IsNull();
+        await Assert.That(JsonSerializer.Deserialize("null", SchemaWalkJsonContext.Default.AIModelInterleaved)).IsNull();
+
+        AIModelInterleaved? content = JsonSerializer.Deserialize(
+            """{"field":"reasoning_content"}""", SchemaWalkJsonContext.Default.AIModelInterleaved);
+        await Assert.That(content!.Field).IsEqualTo(AIModelInterleavedField.ReasoningContent);
+
+        AIModelInterleaved? details = JsonSerializer.Deserialize(
+            """{"field":"reasoning_details"}""", SchemaWalkJsonContext.Default.AIModelInterleaved);
+        await Assert.That(details!.Field).IsEqualTo(AIModelInterleavedField.ReasoningDetails);
     }
 
     [Test]
@@ -695,6 +948,46 @@ public class SchemaWalkTests
         }
 
         await Assert.That(threw).IsTrue();
+    }
+
+    [Test]
+    public async Task ValidateCostTree_RejectsExtensionDataSwallowedKeys_AndBadOverrideValues()
+    {
+        // [JsonExtensionData] captures unknown cost members even with Disallow, so the
+        // strict deserializer alone accepts both fragments below. The explicit cost
+        // validator must reject them.
+        const string mysteryBody = """{"input":1.0,"mystery_key":9}""";
+        using (JsonDocument mystery = JsonDocument.Parse(mysteryBody))
+        {
+            AIModelCostInfo? strict = JsonSerializer.Deserialize(
+                mysteryBody, SchemaWalkJsonContext.Default.AIModelCostInfo);
+            await Assert.That(strict).IsNotNull();
+
+            IReadOnlyList<SchemaDriftFinding> findings =
+                SchemaWalk.ValidateCostTree(mystery.RootElement, "$.cost");
+            await Assert.That(findings.Any(finding => finding.Key == "mystery_key")).IsTrue();
+        }
+
+        const string badOverrideBody = """{"input":1.0,"context_over_200k":{"input":"cheap"}}""";
+        using (JsonDocument badOverride = JsonDocument.Parse(badOverrideBody))
+        {
+            AIModelCostInfo? strict = JsonSerializer.Deserialize(
+                badOverrideBody, SchemaWalkJsonContext.Default.AIModelCostInfo);
+            await Assert.That(strict).IsNotNull();
+
+            IReadOnlyList<SchemaDriftFinding> findings =
+                SchemaWalk.ValidateCostTree(badOverride.RootElement, "$.cost");
+            await Assert.That(findings.Any(finding => finding.Path.Contains("context_over_200k", StringComparison.Ordinal))).IsTrue();
+        }
+
+        // A valid override (numeric fields, null allowed) stays supported.
+        const string validBody = """{"input":1.0,"context_over_200k":{"input":0.4,"output":1.8}}""";
+        using (JsonDocument valid = JsonDocument.Parse(validBody))
+        {
+            IReadOnlyList<SchemaDriftFinding> findings =
+                SchemaWalk.ValidateCostTree(valid.RootElement, "$.cost");
+            await Assert.That(findings.Count).IsEqualTo(0);
+        }
     }
 
     [Test]
