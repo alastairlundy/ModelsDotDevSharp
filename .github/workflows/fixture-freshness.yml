@@ -140,20 +140,21 @@ jobs:
 
           # --- Release check: a new release also requires a re-mirror (D011). ---
           # The releases list is used rather than releases/latest because this repository publishes
-          # pre-releases only, and releases/latest ignores (404s on) pre-releases.
+          # pre-releases only, and releases/latest ignores (404s on) pre-releases. Every page is
+          # fetched and the release with the greatest published_at wins, so list order never decides.
           releases='[]'
           repo="${GITHUB_REPOSITORY:-}"
           if [ -z "$repo" ]; then
             echo "::warning::GITHUB_REPOSITORY is unset, so the release trigger check was skipped. The age check above still ran."
-          elif releases="$(gh api "repos/${repo}/releases?per_page=10")"; then
+          elif releases="$(gh api --paginate --slurp "repos/${repo}/releases?per_page=100")"; then
             :
           else
-            releases='[]'
-            echo "::warning::Could not list releases from the GitHub API, so the release trigger check was skipped. The age check above still ran."
+            fail "Could not list releases from the GitHub API, so the release trigger check could not run." \
+              "Re-run this workflow; a successful empty release list still passes, so only an API error fails here."
           fi
 
-          release_tag="$(jq -r '[.[] | select(.published_at != null)][0].tag_name // empty' <<<"$releases")"
-          release_at="$(jq -r '[.[] | select(.published_at != null)][0].published_at // empty' <<<"$releases")"
+          release_tag="$(jq -r '[.[][] | select(.published_at != null)] | sort_by(.published_at) | .[-1].tag_name // empty' <<<"$releases")"
+          release_at="$(jq -r '[.[][] | select(.published_at != null)] | sort_by(.published_at) | .[-1].published_at // empty' <<<"$releases")"
 
           if [ -n "$release_at" ]; then
             release_epoch="$(date -u -d "$release_at" +%s)"
