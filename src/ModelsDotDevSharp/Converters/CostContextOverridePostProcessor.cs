@@ -25,12 +25,15 @@
 namespace ModelsDotDevSharp.Converters;
 
 using System.Text.Json;
-using Contexts;
+using System.Text.Json.Serialization.Metadata;
 
 internal static class CostContextOverridePostProcessor
 {
-    public static void Process(AIModelCostInfo cost, JsonSerializerOptions options)
+    public static void Process(AIModelCostInfo cost, JsonTypeInfo<AIModelCostInfo> costTypeInfo)
     {
+        ArgumentNullException.ThrowIfNull(cost);
+        ArgumentNullException.ThrowIfNull(costTypeInfo);
+
         if (cost.ContextOverridesRaw is null || cost.ContextOverridesRaw.Count == 0)
         {
             return;
@@ -48,7 +51,7 @@ internal static class CostContextOverridePostProcessor
             string suffix = pair.Key[prefix.Length..];
             JsonElement value = pair.Value;
 
-            AIModelCostInfo? deserialized = value.Deserialize(ModelInfoJsonContext.Default.AIModelCostInfo);
+            AIModelCostInfo? deserialized = value.Deserialize(costTypeInfo);
             if (deserialized is not null)
             {
                 cost.ContextOverrides[suffix] = deserialized;

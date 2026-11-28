@@ -24,7 +24,7 @@
 
 namespace ModelsDotDevSharp.Internal;
 
-using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 
 /// <summary>
 /// Resolves <c>context_over_*</c> extension-data keys into the typed
@@ -38,15 +38,15 @@ internal static class CostProcessing
     /// Resolves context overrides across a model's base cost and every experimental mode cost.
     /// </summary>
     /// <param name="model">The model whose costs should be processed.</param>
-    /// <param name="options">Serializer options used to decode nested override costs.</param>
-    public static void ProcessModel(AIModelInfo model, JsonSerializerOptions options)
+    /// <param name="costTypeInfo">Source-generated type info used to decode nested override costs.</param>
+    public static void ProcessModel(AIModelInfo model, JsonTypeInfo<AIModelCostInfo> costTypeInfo)
     {
         ArgumentNullException.ThrowIfNull(model);
-        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(costTypeInfo);
 
         if (model.Cost is not null)
         {
-            ProcessAll(model.Cost, options);
+            ProcessAll(model.Cost, costTypeInfo);
         }
 
         if (model.Experimental?.Modes is null)
@@ -58,7 +58,7 @@ internal static class CostProcessing
         {
             if (mode?.Cost is not null)
             {
-                ProcessAll(mode.Cost, options);
+                ProcessAll(mode.Cost, costTypeInfo);
             }
         }
     }
@@ -68,11 +68,11 @@ internal static class CostProcessing
     /// <see cref="StackOverflowException"/> on deeply nested <see cref="AIModelCostInfo.ContextOverrides"/>.
     /// </summary>
     /// <param name="cost">The root cost to process.</param>
-    /// <param name="options">Serializer options used to decode nested override costs.</param>
-    public static void ProcessAll(AIModelCostInfo cost, JsonSerializerOptions options)
+    /// <param name="costTypeInfo">Source-generated type info used to decode nested override costs.</param>
+    public static void ProcessAll(AIModelCostInfo cost, JsonTypeInfo<AIModelCostInfo> costTypeInfo)
     {
         ArgumentNullException.ThrowIfNull(cost);
-        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(costTypeInfo);
 
         Stack<AIModelCostInfo> stack = new Stack<AIModelCostInfo>();
         stack.Push(cost);
@@ -80,11 +80,14 @@ internal static class CostProcessing
         while (stack.Count > 0)
         {
             AIModelCostInfo current = stack.Pop();
-            CostContextOverridePostProcessor.Process(current, options);
+            CostContextOverridePostProcessor.Process(current, costTypeInfo);
 
             foreach (AIModelCostInfo contextOverride in current.ContextOverrides.Values)
             {
-                stack.Push(contextOverride);
+                if (contextOverride is not null)
+                {
+                    stack.Push(contextOverride);
+                }
             }
         }
     }

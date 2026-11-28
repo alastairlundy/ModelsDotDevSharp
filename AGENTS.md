@@ -9,7 +9,8 @@
 - Build: `dotnet build src/ModelsDotDevSharp.slnx` (or `dotnet build src/ModelsDotDevSharp/ModelsDotDevSharp.csproj`).
 - Pack: `dotnet pack src/ModelsDotDevSharp/ModelsDotDevSharp.csproj` — `GeneratePackageOnBuild=true` is set, so a `.nupkg` is produced on build.
 - Test: `dotnet test src/ModelsDotDevSharp.slnx` runs the TUnit test project at `tests/ModelsDotDevSharp.Tests/`. Tests DO exist — do not treat `dotnet test` as a no-op.
-- No CI workflows exist in `.github/workflows/`. Dependabot (`.github/dependabot.yml`) updates NuGet weekly and looks for GitHub Actions (none yet).
+- CI lives in `.github/workflows/`: `test-build.yml` (build + `dotnet test` on pull requests and pushes to `main`), `publish.yml` (manual `workflow_dispatch` NuGet publish), and `fixture-freshness.yml` (weekly cron plus `workflow_dispatch`, and path-filtered push/PR runs on the fixture manifest, the regression pins and itself; enforces the 14-day fixture re-mirror cadence declared in `tests/ModelsDotDevSharp.Tests/fixture-freshness-manifest.json`).
+- Dependabot (`.github/dependabot.yml`) updates NuGet (`src`, `tests` directories) and GitHub Actions weekly on Mondays with a 3-day cooldown.
 
 ## Dependency management — Central Package Management
 - `src/Directory.Packages.props` has `ManagePackageVersionsCentrally=true`.
