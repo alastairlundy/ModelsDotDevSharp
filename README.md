@@ -32,3 +32,34 @@ AIProviderInfo[] providers = await repository.GetProviderInfosAsync();
 // A single model by provider and model id
 AIModelInfo model = await repository.GetModelInfoByIdAsync("anthropic", "claude-3-5-sonnet");
 ```
+
+### Model metadata
+
+Resolve `IModelMetadataRepository` and fetch one model by its composite id:
+
+```csharp
+var metadataRepository = provider.GetRequiredService<IModelMetadataRepository>();
+
+// Composite id has the form "provider/model"
+AIModelMetadata metadata = await metadataRepository.GetModelMetadataAsync("openai/gpt-5.6-sol");
+```
+
+### Catalog
+
+Resolve `ICatalogRepository` and fetch the full catalog:
+
+```csharp
+var catalogRepository = provider.GetRequiredService<ICatalogRepository>();
+
+AICatalog catalog = await catalogRepository.GetCatalogAsync();
+```
+
+### Configuration
+
+Override the API base address when you register the services:
+
+```csharp
+services.AddModelsDotDevSharp(opts =>
+{
+    opts.BaseAddress = "https://models.dev";
+});
