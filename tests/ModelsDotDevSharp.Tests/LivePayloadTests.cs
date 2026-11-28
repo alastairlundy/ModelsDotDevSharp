@@ -1832,6 +1832,23 @@ public class LivePayloadTests
                 // product's converter would build) deserializes strictly, models included.
                 foreach (JsonProperty provider in root.EnumerateObject())
                 {
+                    if (provider.Value.ValueKind == JsonValueKind.Object
+                        && provider.Value.TryGetProperty("models", out JsonElement apiModels)
+                        && apiModels.ValueKind == JsonValueKind.Object)
+                    {
+                        foreach (JsonProperty model in apiModels.EnumerateObject())
+                        {
+                            if (model.Value.ValueKind == JsonValueKind.Null)
+                            {
+                                string modelPath = $"$.['{provider.Name}'].models['{model.Name}']";
+                                string modelDump = DumpAt(root, modelPath) ?? Trim(model.Value.GetRawText());
+                                failures.Add($"endpoint: {endpoint} | JSON path: {modelPath} "
+                                    + $"| gap: {GapFor(endpoint, modelPath, LastPathSegment(modelPath))} | object (trimmed): {Trim(modelDump)} "
+                                    + $"| failure: Strict deserialization returned null; expected a record object.");
+                            }
+                        }
+                    }
+
                     deserialized++;
                     DeserializeStrict(failures, endpoint, $"$.['{provider.Name}']",
                         FlattenProviderModels(provider.Value), SchemaWalkJsonContext.Default.AIProviderInfo, root);
@@ -1843,8 +1860,18 @@ public class LivePayloadTests
                 // The model id map: the key becomes the id, so each record object deserializes as-is.
                 foreach (JsonProperty record in root.EnumerateObject())
                 {
+                    string recordPath = $"$.['{record.Name}']";
+                    if (record.Value.ValueKind == JsonValueKind.Null)
+                    {
+                        string dump = DumpAt(root, recordPath) ?? Trim(record.Value.GetRawText());
+                        failures.Add($"endpoint: {endpoint} | JSON path: {recordPath} "
+                            + $"| gap: {GapFor(endpoint, recordPath, LastPathSegment(recordPath))} | object (trimmed): {Trim(dump)} "
+                            + $"| failure: Strict deserialization returned null; expected a record object.");
+                        continue;
+                    }
+
                     deserialized++;
-                    DeserializeStrict(failures, endpoint, $"$.['{record.Name}']", record.Value.GetRawText(),
+                    DeserializeStrict(failures, endpoint, recordPath, record.Value.GetRawText(),
                         SchemaWalkJsonContext.Default.AIModelMetadata, root);
                 }
 
@@ -1856,6 +1883,23 @@ public class LivePayloadTests
                 {
                     foreach (JsonProperty provider in providers.EnumerateObject())
                     {
+                        if (provider.Value.ValueKind == JsonValueKind.Object
+                            && provider.Value.TryGetProperty("models", out JsonElement catalogModels)
+                            && catalogModels.ValueKind == JsonValueKind.Object)
+                        {
+                            foreach (JsonProperty model in catalogModels.EnumerateObject())
+                            {
+                                if (model.Value.ValueKind == JsonValueKind.Null)
+                                {
+                                    string modelPath = $"$.providers['{provider.Name}'].models['{model.Name}']";
+                                    string modelDump = DumpAt(root, modelPath) ?? Trim(model.Value.GetRawText());
+                                    failures.Add($"endpoint: {endpoint} | JSON path: {modelPath} "
+                                        + $"| gap: {GapFor(endpoint, modelPath, LastPathSegment(modelPath))} | object (trimmed): {Trim(modelDump)} "
+                                        + $"| failure: Strict deserialization returned null; expected a record object.");
+                                }
+                            }
+                        }
+
                         deserialized++;
                         DeserializeStrict(failures, endpoint, $"$.providers['{provider.Name}']",
                             FlattenProviderModels(provider.Value), SchemaWalkJsonContext.Default.AIProviderInfo, root);
@@ -1876,8 +1920,18 @@ public class LivePayloadTests
                 {
                     foreach (JsonProperty record in models.EnumerateObject())
                     {
+                        string recordPath = $"$.models['{record.Name}']";
+                        if (record.Value.ValueKind == JsonValueKind.Null)
+                        {
+                            string recordDump = DumpAt(root, recordPath) ?? Trim(record.Value.GetRawText());
+                            failures.Add($"endpoint: {endpoint} | JSON path: {recordPath} "
+                                + $"| gap: {GapFor(endpoint, recordPath, LastPathSegment(recordPath))} | object (trimmed): {Trim(recordDump)} "
+                                + $"| failure: Strict deserialization returned null; expected a record object.");
+                            continue;
+                        }
+
                         deserialized++;
-                        DeserializeStrict(failures, endpoint, $"$.models['{record.Name}']", record.Value.GetRawText(),
+                        DeserializeStrict(failures, endpoint, recordPath, record.Value.GetRawText(),
                             SchemaWalkJsonContext.Default.AIModelMetadata, root);
                     }
                 }
@@ -1916,7 +1970,15 @@ public class LivePayloadTests
     {
         try
         {
-            JsonSerializer.Deserialize(json, typeInfo);
+            T? result = JsonSerializer.Deserialize(json, typeInfo);
+            if (result is null)
+            {
+                string dump = DumpAt(dumpRoot, path)
+                    ?? "(the offending object could not be resolved in the fetched payload)";
+                failures.Add($"endpoint: {endpoint} | JSON path: {path} "
+                    + $"| gap: {GapFor(endpoint, path, LastPathSegment(path))} | object (trimmed): {Trim(dump)} "
+                    + $"| failure: Strict deserialization returned null; expected a record object.");
+            }
         }
         catch (JsonException exception)
         {
