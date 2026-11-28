@@ -1770,6 +1770,15 @@ public class LivePayloadTests
                             FlattenProviderModels(provider.Value), SchemaWalkJsonContext.Default.AIProviderInfo, root);
                     }
                 }
+                else
+                {
+                    string actual = root.TryGetProperty("providers", out JsonElement actualProviders)
+                        ? actualProviders.ValueKind.ToString()
+                        : "missing";
+                    string dump = DumpAt(root, "$.providers") ?? Trim(root.GetRawText());
+                    failures.Add($"endpoint: {endpoint} | JSON path: $.providers | object (trimmed): {dump} "
+                        + $"| failure: Expected JSON object for \"providers\" but found {actual}.");
+                }
 
                 if (root.TryGetProperty("models", out JsonElement models)
                     && models.ValueKind == JsonValueKind.Object)
@@ -1780,6 +1789,15 @@ public class LivePayloadTests
                         DeserializeStrict(failures, endpoint, $"$.models['{record.Name}']", record.Value.GetRawText(),
                             SchemaWalkJsonContext.Default.AIModelMetadata, root);
                     }
+                }
+                else
+                {
+                    string actual = root.TryGetProperty("models", out JsonElement actualModels)
+                        ? actualModels.ValueKind.ToString()
+                        : "missing";
+                    string dump = DumpAt(root, "$.models") ?? Trim(root.GetRawText());
+                    failures.Add($"endpoint: {endpoint} | JSON path: $.models | object (trimmed): {dump} "
+                        + $"| failure: Expected JSON object for \"models\" but found {actual}.");
                 }
 
                 break;
