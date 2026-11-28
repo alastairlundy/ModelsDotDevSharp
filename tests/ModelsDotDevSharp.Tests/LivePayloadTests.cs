@@ -25,6 +25,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using ModelsDotDevSharp.Abstractions;
@@ -40,12 +41,16 @@ namespace ModelsDotDevSharp.Tests;
 /// real model with no sampling draw: no throw during deserialization, no extension-data residue on any
 /// cost object, every JSON key mapping to a property through the SchemaWalk machinery, and generic
 /// value assertions - dates parse, enums within closed sets, costs non-negative, reasoning option
-/// min <= max where both present, and interleaved boolean-or-object consistency.
+/// min <= max where both present, and interleaved boolean-or-object consistency. Because the
+/// repositories expose no raw bytes, the byte-level layer fetches each endpoint a second time per
+/// run, deserializes those bytes with the strict test context, and hosts the two-directional drift
+/// check with JSON paths.
 /// </summary>
 /// <remarks>
 /// Network policy: the request timeout is configured through this suite's own service collection and
 /// a small fixed retry loop in test code absorbs transient failures, so a red run separates a network
-/// flake from a mapping error without any product change. Every failure reports the JSON path plus a
+/// flake from a mapping error without any product change. The byte-level layer reuses that same
+/// timeout and retry policy. Every failure reports the JSON path plus a
 /// trimmed dump of the offending model or provider object, and each check that is expected red until
 /// the concurrent mapping-fix session lands names the drift-comparison gap it guards.
 /// </remarks>
@@ -90,6 +95,9 @@ public class LivePayloadTests
     private const string CatalogGaps =
         "the experimental mode `{cost, provider}` shape, cost `reasoning`, tier `cache_read`/`cache_write`/`reasoning`, "
         + "metadata `description`/`license`/`links`/`type`, weight `format`/`quantization`";
+
+    /// <summary>The gap the stale direction of the drift comparison documents.</summary>
+    private const string RetiredStalePropertiesGap = "the retired stale properties";
 
     /// <summary>
     /// Step 1 - the suite's own service collection wires the repositories with real HTTP and the
@@ -510,6 +518,112 @@ public class LivePayloadTests
             }
 
             throw new InvalidOperationException(message.ToString());
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // Byte-level layer: the endpoint bytes fetched a second time per run (the repositories expose
+    // no raw bytes), strictly deserialized with the test context, then walked in both drift
+    // directions. Every failure carries a JSON path, a trimmed dump, and its named gap.
+    // ------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Byte-level layer, step 1 - fetches each endpoint's bytes a second time per run, separate from
+    /// the repository-layer fetches, through the same timeout and retry policy. No repository entry
+    /// point participates, so a failure here is only ever a transient network flake (named by the
+    /// retry loop once it exhausts its attempts), never a mapping error.
+    /// </summary>
+    [Test]
+    public async Task ByteLevelFetch_SucceedsIndependentlyOfTheRepositoryLayer()
+    {
+        using ServiceProvider services = BuildLiveProvider();
+
+        (string Endpoint, JsonElement Root)[] payloads = await FetchByteLevelPayloadsAsync(services);
+
+        foreach ((string endpoint, JsonElement root) in payloads)
+        {
+            if (root.ValueKind != JsonValueKind.Object || !root.EnumerateObject().Any())
+            {
+                throw new InvalidOperationException(
+                    $"The byte-level pass could not fetch a usable {endpoint} payload: its second fetch "
+                    + "of this endpoint returned no JSON object. A failure here is a network flake, never "
+                    + "a mapping error.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Byte-level layer, step 2 - deserializes every bound object the endpoints' bytes carry with
+    /// the strict test context from SchemaWalk (unmapped members disallowed plus the named
+    /// converters), so an unknown member or a wrong value shape throws instead of being skipped. The
+    /// dynamic id maps are peeled manually here, the way the walk does: each provider's models map is
+    /// rewritten into the array the product's flattening converter would build, because those
+    /// converters hardcode the product's contexts. Every rejection reports the JSON path, a trimmed
+    /// dump, and the gap it documents.
+    /// </summary>
+    [Test]
+    public async Task ByteLevelStrictDeserialization_RejectsUnknownMembersWithJsonPaths()
+    {
+        using ServiceProvider services = BuildLiveProvider();
+        (string Endpoint, JsonElement Root)[] payloads = await FetchByteLevelPayloadsAsync(services);
+
+        List<string> failures = [];
+        int deserialized = 0;
+        foreach ((string endpoint, JsonElement root) in payloads)
+        {
+            deserialized += StrictDeserializeEndpoint(endpoint, root, failures);
+        }
+
+        if (failures.Count > 0)
+        {
+            throw AggregateByteLevelFailure(
+                "The strict test context rejected a real payload object - an unknown member or a wrong value "
+                + "shape reached the strict deserializer:",
+                failures);
+        }
+
+        await Assert.That(deserialized).IsGreaterThan(0);
+    }
+
+    /// <summary>
+    /// Byte-level layer, steps 3 and 4 - runs the reflection-built schema walk against the fetched
+    /// bytes and reports both drift directions with JSON paths: every unmapped key, and every mapped
+    /// property no fetched payload object anywhere carries. The allowlist for deliberately unmapped
+    /// keys is consulted on every walk; it is empty today and any future entry must carry a written
+    /// reason. Each failure carries a trimmed dump of the offending object and names the gap it
+    /// documents - the retired stale properties for the stale direction, the mapped key's gap (or an
+    /// explicit new-upstream-drift verdict) for the unmapped direction.
+    /// </summary>
+    [Test]
+    public async Task ByteLevelSchemaWalk_ReportsBothDriftDirectionsWithJsonPathsAndNamedGaps()
+    {
+        using ServiceProvider services = BuildLiveProvider();
+        (string Endpoint, JsonElement Root)[] payloads = await FetchByteLevelPayloadsAsync(services);
+
+        IReadOnlyList<SchemaWalkAllowlistEntry> allowlist = SchemaWalkAllowlist.Entries;
+        await Assert.That(allowlist.All(entry => !string.IsNullOrWhiteSpace(entry.Reason))).IsTrue();
+
+        HashSet<string> payloadKeys = CollectPayloadKeys(payloads);
+
+        List<string> failures = [];
+        foreach ((string endpoint, JsonElement root) in payloads)
+        {
+            SchemaWalkReport report = endpoint switch
+            {
+                ApiJsonPath => SchemaWalk.WalkApiJson(root, allowlist),
+                ModelsJsonPath => SchemaWalk.WalkModelsJson(root, allowlist),
+                CatalogJsonPath => SchemaWalk.WalkCatalogJson(root, allowlist),
+                _ => throw new InvalidOperationException($"The byte-level pass has no walk shape for '{endpoint}'."),
+            };
+
+            CollectDriftFindings(failures, endpoint, report, root, payloadKeys);
+        }
+
+        if (failures.Count > 0)
+        {
+            throw AggregateByteLevelFailure(
+                "The reflection-built schema walk found drift between the fetched bytes and the mapped shapes:",
+                failures);
         }
     }
 
@@ -1522,7 +1636,7 @@ public class LivePayloadTests
         {
             string dump = DumpAt(root, finding.Path)
                 ?? "(the offending object could not be resolved in the fetched payload)";
-            failures.Add($"JSON path: {finding.Path} | gap: {GapFor(endpoint, finding)} | unmapped key: "
+            failures.Add($"JSON path: {finding.Path} | gap: {GapFor(endpoint, finding.Path, finding.Key)} | unmapped key: "
                 + $"`{finding.Key}` | object (trimmed): {Trim(dump)}"
                 + (finding.Detail is null ? string.Empty : $" | detail: {finding.Detail}"));
         }
@@ -1535,14 +1649,11 @@ public class LivePayloadTests
     }
 
     /// <summary>
-    /// Maps one unmapped-key finding to the drift-comparison gap it belongs to, or explicitly reports
-    /// that the key is new upstream drift rather than a gap the list already names.
+    /// Maps one finding to the drift-comparison gap it belongs to, or explicitly reports that its key
+    /// is new upstream drift rather than a gap the list already names.
     /// </summary>
-    private static string GapFor(string endpoint, SchemaDriftFinding finding)
+    private static string GapFor(string endpoint, string path, string key)
     {
-        string path = finding.Path;
-        string key = finding.Key;
-
         if (path.Contains(".experimental.modes", StringComparison.Ordinal) && key is "cost" or "provider")
         {
             return "the experimental mode `{cost, provider}` shape";
@@ -1592,6 +1703,274 @@ public class LivePayloadTests
         }
 
         return "not on the drift-comparison list - a new upstream key the mappings have never seen";
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // Byte-level layer: the second fetch, strict-context deserialization, and both drift
+    // directions.
+    // ------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Fetches each endpoint's bytes a second time per run - separate from any repository-layer
+    /// fetch, through the same timeout and retry policy - so the byte-level pass owns its own bytes,
+    /// since the repositories expose no raw bytes.
+    /// </summary>
+    private static async Task<(string Endpoint, JsonElement Root)[]> FetchByteLevelPayloadsAsync(
+        ServiceProvider services) =>
+    [
+        (ApiJsonPath, await RetryAsync(() => FetchRawJsonAsync(services, ApiJsonPath), ApiJsonPath)),
+        (ModelsJsonPath, await RetryAsync(() => FetchRawJsonAsync(services, ModelsJsonPath), ModelsJsonPath)),
+        (CatalogJsonPath, await RetryAsync(() => FetchRawJsonAsync(services, CatalogJsonPath), CatalogJsonPath)),
+    ];
+
+    /// <summary>
+    /// Strictly deserializes every bound object one endpoint's bytes carry with
+    /// <see cref="SchemaWalkJsonContext"/> - unmapped members disallowed, named converters applied -
+    /// peeling the dynamic id maps manually the way the walk does. Returns the number of objects
+    /// submitted; every rejection lands in <paramref name="failures"/> with its JSON path, a trimmed
+    /// dump, and the gap it documents.
+    /// </summary>
+    private static int StrictDeserializeEndpoint(string endpoint, JsonElement root, List<string> failures)
+    {
+        int deserialized = 0;
+        switch (endpoint)
+        {
+            case ApiJsonPath:
+                // The provider id map: each provider (models map flattened into the array the
+                // product's converter would build) deserializes strictly, models included.
+                foreach (JsonProperty provider in root.EnumerateObject())
+                {
+                    deserialized++;
+                    DeserializeStrict(failures, endpoint, $"$.['{provider.Name}']",
+                        FlattenProviderModels(provider.Value), SchemaWalkJsonContext.Default.AIProviderInfo, root);
+                }
+
+                break;
+
+            case ModelsJsonPath:
+                // The model id map: the key becomes the id, so each record object deserializes as-is.
+                foreach (JsonProperty record in root.EnumerateObject())
+                {
+                    deserialized++;
+                    DeserializeStrict(failures, endpoint, $"$.['{record.Name}']", record.Value.GetRawText(),
+                        SchemaWalkJsonContext.Default.AIModelMetadata, root);
+                }
+
+                break;
+
+            case CatalogJsonPath:
+                if (root.TryGetProperty("providers", out JsonElement providers)
+                    && providers.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (JsonProperty provider in providers.EnumerateObject())
+                    {
+                        deserialized++;
+                        DeserializeStrict(failures, endpoint, $"$.providers['{provider.Name}']",
+                            FlattenProviderModels(provider.Value), SchemaWalkJsonContext.Default.AIProviderInfo, root);
+                    }
+                }
+
+                if (root.TryGetProperty("models", out JsonElement models)
+                    && models.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (JsonProperty record in models.EnumerateObject())
+                    {
+                        deserialized++;
+                        DeserializeStrict(failures, endpoint, $"$.models['{record.Name}']", record.Value.GetRawText(),
+                            SchemaWalkJsonContext.Default.AIModelMetadata, root);
+                    }
+                }
+
+                break;
+
+            default:
+                throw new InvalidOperationException(
+                    $"The byte-level pass has no strict deserialization shape for '{endpoint}'.");
+        }
+
+        return deserialized;
+    }
+
+    /// <summary>
+    /// Deserializes one fragment with its strict <see cref="JsonTypeInfo{T}"/>, mapping a
+    /// <see cref="JsonException"/> to a path-precise failure: the composed JSON path, the gap the
+    /// offending key documents, and a trimmed dump of the offending object.
+    /// </summary>
+    private static void DeserializeStrict<T>(
+        List<string> failures,
+        string endpoint,
+        string path,
+        string json,
+        JsonTypeInfo<T> typeInfo,
+        JsonElement dumpRoot)
+    {
+        try
+        {
+            JsonSerializer.Deserialize(json, typeInfo);
+        }
+        catch (JsonException exception)
+        {
+            string fullPath = ComposeJsonPath(path, exception.Path);
+            string dump = DumpAt(dumpRoot, fullPath)
+                ?? "(the offending object could not be resolved in the fetched payload)";
+            failures.Add($"endpoint: {endpoint} | JSON path: {fullPath} "
+                + $"| gap: {GapFor(endpoint, fullPath, LastPathSegment(fullPath))} | object (trimmed): {Trim(dump)} "
+                + $"| failure: {exception.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Rewrites one provider object's <c>models</c> map into the array the product's flattening
+    /// converter would build, so the strict context can deserialize a whole provider - models
+    /// included - without the product's converter, which hardcodes the product's contexts.
+    /// </summary>
+    private static string FlattenProviderModels(JsonElement provider)
+    {
+        using MemoryStream buffer = new();
+        using (Utf8JsonWriter writer = new(buffer))
+        {
+            writer.WriteStartObject();
+            foreach (JsonProperty member in provider.EnumerateObject())
+            {
+                if (member.NameEquals("models") && member.Value.ValueKind == JsonValueKind.Object)
+                {
+                    writer.WritePropertyName("models");
+                    writer.WriteStartArray();
+                    foreach (JsonProperty model in member.Value.EnumerateObject())
+                    {
+                        model.Value.WriteTo(writer);
+                    }
+
+                    writer.WriteEndArray();
+                    continue;
+                }
+
+                member.WriteTo(writer);
+            }
+
+            writer.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
+    }
+
+    /// <summary>
+    /// Collects both drift directions from one endpoint's walk report: every unmapped key (through
+    /// the key-mapping collector above), plus every mapped property whose key no fetched payload
+    /// object anywhere carries. The global presence set is what separates a genuinely retired stale
+    /// property from an optional field absent from some objects, or from one endpoint's view of a
+    /// shared type - the latter is not staleness.
+    /// </summary>
+    private static void CollectDriftFindings(
+        List<string> failures,
+        string endpoint,
+        SchemaWalkReport report,
+        JsonElement root,
+        IReadOnlySet<string> payloadKeys)
+    {
+        CollectUnmappedKeys(failures, endpoint, report, root);
+
+        foreach (IGrouping<string, SchemaDriftFinding> group in report.Findings
+            .Where(finding => finding.Kind == SchemaDriftKind.StaleProperty)
+            .GroupBy(finding => finding.Key, StringComparer.Ordinal))
+        {
+            if (payloadKeys.Contains(group.Key))
+            {
+                continue;
+            }
+
+            SchemaDriftFinding first = group.First();
+            string dump = DumpAt(root, first.Path)
+                ?? "(the offending object could not be resolved in the fetched payload)";
+            failures.Add($"{group.Count()} object(s) on {endpoint} carry no `{group.Key}` member, and no fetched "
+                + "payload object anywhere carries it either. Gap list (expected-red until the mapping-fix "
+                + $"session lands): {RetiredStalePropertiesGap}. JSON path: {first.Path} "
+                + $"| gap: {RetiredStalePropertiesGap} | object (trimmed): {Trim(dump)}");
+        }
+    }
+
+    /// <summary>Every JSON member name that appears anywhere in the fetched payloads.</summary>
+    private static HashSet<string> CollectPayloadKeys((string Endpoint, JsonElement Root)[] payloads)
+    {
+        HashSet<string> keys = new(StringComparer.Ordinal);
+        foreach ((_, JsonElement root) in payloads)
+        {
+            CollectPayloadKeys(root, keys);
+        }
+
+        return keys;
+    }
+
+    private static void CollectPayloadKeys(JsonElement element, HashSet<string> keys)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                foreach (JsonProperty member in element.EnumerateObject())
+                {
+                    keys.Add(member.Name);
+                    CollectPayloadKeys(member.Value, keys);
+                }
+
+                break;
+
+            case JsonValueKind.Array:
+                foreach (JsonElement item in element.EnumerateArray())
+                {
+                    CollectPayloadKeys(item, keys);
+                }
+
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Composes a fragment's path with the serializer's own exception path, so dumps and gap keys
+    /// resolve no matter whether the serializer reported nothing, a root-relative path, or a member.
+    /// </summary>
+    private static string ComposeJsonPath(string fragmentPath, string? serializerPath)
+    {
+        if (string.IsNullOrWhiteSpace(serializerPath))
+        {
+            return fragmentPath;
+        }
+
+        string suffix = serializerPath[0] == '$' ? serializerPath[1..] : serializerPath;
+        if (suffix.Length == 0)
+        {
+            return fragmentPath;
+        }
+
+        return suffix[0] is '.' or '[' ? fragmentPath + suffix : fragmentPath + "." + suffix;
+    }
+
+    private static string LastPathSegment(string path)
+    {
+        List<string> segments = SplitPath(path);
+        return segments.Count > 0 ? segments[^1] : path;
+    }
+
+    private static InvalidOperationException AggregateByteLevelFailure(string headline, List<string> failures)
+    {
+        StringBuilder message = new();
+        message.Append("Byte-level drift pass failures: ")
+            .Append(failures.Count.ToString(CultureInfo.InvariantCulture))
+            .AppendLine(".");
+        message.AppendLine(headline);
+
+        foreach (string failure in failures.Take(MaxReportedFailures))
+        {
+            message.AppendLine(failure);
+        }
+
+        if (failures.Count > MaxReportedFailures)
+        {
+            message.Append("... and ")
+                .Append((failures.Count - MaxReportedFailures).ToString(CultureInfo.InvariantCulture))
+                .AppendLine(" more failure(s) trimmed from this report.");
+        }
+
+        return new InvalidOperationException(message.ToString());
     }
 
     // ------------------------------------------------------------------------------------------
