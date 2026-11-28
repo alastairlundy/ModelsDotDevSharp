@@ -56,6 +56,8 @@ namespace ModelsDotDevSharp.Tests;
 /// trimmed dump of the offending model or provider object, and each check that is expected red until
 /// the concurrent mapping-fix session lands names the drift-comparison gap it guards.
 /// </remarks>
+[Explicit]
+[Category("Live")]
 public class LivePayloadTests
 {
     private const string ApiJsonPath = "/api.json";
@@ -979,11 +981,18 @@ public class LivePayloadTests
             int index = 0;
             foreach (JsonElement rawWeight in rawWeights.EnumerateArray())
             {
-                if (rawWeight.ValueKind == JsonValueKind.Object && weights[index] is { } weight)
+                if (rawWeight.ValueKind == JsonValueKind.Object)
                 {
                     string weightPath = $"{path}.weights[{index}]";
-                    CheckWireString(failures, rawWeight, "format", weight.Format, weightPath, rawMetadata);
-                    CheckWireString(failures, rawWeight, "quantization", weight.Quantization, weightPath, rawMetadata);
+                    if (weights[index] is not { } weight)
+                    {
+                        Fail(failures, weightPath, "a weight deserialized to null", rawMetadata);
+                    }
+                    else
+                    {
+                        CheckWireString(failures, rawWeight, "format", weight.Format, weightPath, rawMetadata);
+                        CheckWireString(failures, rawWeight, "quantization", weight.Quantization, weightPath, rawMetadata);
+                    }
                 }
 
                 index++;

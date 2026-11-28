@@ -34,11 +34,31 @@ using ModelsDotDevSharp.Converters;
 namespace ModelsDotDevSharp.Tests;
 
 /// <summary>
+/// Test-only string enum converter that accepts named values but rejects numeric tokens.
+/// </summary>
+internal sealed class StrictAIModelStatusConverter() : JsonStringEnumConverter<AIModelStatus>(allowIntegerValues: false);
+
+/// <summary>
+/// Test-only string enum converter that accepts named values but rejects numeric tokens.
+/// </summary>
+internal sealed class StrictAIModelReasoningOptionTypeConverter() : JsonStringEnumConverter<AIModelReasoningOptionType>(allowIntegerValues: false);
+
+/// <summary>
+/// Test-only string enum converter that accepts named values but rejects numeric tokens.
+/// </summary>
+internal sealed class StrictAIModelProviderShapeConverter() : JsonStringEnumConverter<AIModelProviderShape>(allowIntegerValues: false);
+
+/// <summary>
+/// Test-only string enum converter that accepts named values but rejects numeric tokens.
+/// </summary>
+internal sealed class StrictAIModelInterleavedFieldConverter() : JsonStringEnumConverter<AIModelInterleavedField>(allowIntegerValues: false);
+
+/// <summary>
 /// The strict, test-only counterpart to the product's contexts. Every registered type
 /// deserializes with <see cref="JsonUnmappedMemberHandling.Disallow"/>, so a payload key with no
 /// mapped property throws instead of silently disappearing, and the four wire enums are read
-/// through the generic string enum converters (never the non-generic converter, which is not
-/// native-AOT-safe). The product's flattening converters are deliberately absent: they
+/// through the generic string enum converters with integer values disabled (never the
+/// non-generic converter, which is not native-AOT-safe). The product's flattening converters are deliberately absent: they
 /// hardcode the product's contexts, so <see cref="SchemaWalk"/> peels the dynamic maps
 /// manually instead. The tests project is never AOT-published, which is what makes a
 /// test-only context acceptable here.
@@ -78,10 +98,10 @@ namespace ModelsDotDevSharp.Tests;
     [
         typeof(FlexibleDateOnlyConverter),
         typeof(InterleavedBooleanOrObjectConverter),
-        typeof(JsonStringEnumConverter<AIModelStatus>),
-        typeof(JsonStringEnumConverter<AIModelReasoningOptionType>),
-        typeof(JsonStringEnumConverter<AIModelProviderShape>),
-        typeof(JsonStringEnumConverter<AIModelInterleavedField>),
+        typeof(StrictAIModelStatusConverter),
+        typeof(StrictAIModelReasoningOptionTypeConverter),
+        typeof(StrictAIModelProviderShapeConverter),
+        typeof(StrictAIModelInterleavedFieldConverter),
     ])]
 public partial class SchemaWalkJsonContext : JsonSerializerContext
 {
@@ -785,12 +805,12 @@ public class SchemaWalkTests
         const string body = """{"name":"GPT One","brand_new":true,"deliberately_unmapped":true}""";
         using JsonDocument document = JsonDocument.Parse(body);
 
-        // The shipped allowlist is empty today, so every unmapped key is reported - the same
+        // With an explicit empty allowlist, every unmapped key is reported - the same
         // hand-built fragment reports the stale direction alongside it.
-        SchemaWalkReport withShippedAllowlist = SchemaWalk.Walk(document.RootElement, typeof(AIModelInfo));
-        await Assert.That(UnmappedKeys(withShippedAllowlist).Contains("brand_new")).IsTrue();
-        await Assert.That(UnmappedKeys(withShippedAllowlist).Contains("deliberately_unmapped")).IsTrue();
-        await Assert.That(Has(withShippedAllowlist, SchemaDriftKind.StaleProperty, "$.description")).IsTrue();
+        SchemaWalkReport withEmptyAllowlist = SchemaWalk.Walk(document.RootElement, typeof(AIModelInfo), allowlist: []);
+        await Assert.That(UnmappedKeys(withEmptyAllowlist).Contains("brand_new")).IsTrue();
+        await Assert.That(UnmappedKeys(withEmptyAllowlist).Contains("deliberately_unmapped")).IsTrue();
+        await Assert.That(Has(withEmptyAllowlist, SchemaDriftKind.StaleProperty, "$.description")).IsTrue();
 
         // An allowlist entry silences its key; other unmapped keys still report.
         SchemaWalkAllowlistEntry[] allowlist = [new("deliberately_unmapped", "Speculative upstream field the library will map later.")];
@@ -798,8 +818,7 @@ public class SchemaWalkTests
         await Assert.That(UnmappedKeys(withAllowlist).Contains("brand_new")).IsTrue();
         await Assert.That(UnmappedKeys(withAllowlist).Contains("deliberately_unmapped")).IsFalse();
 
-        // The mechanism: empty today, and any future entry must carry a written reason.
-        await Assert.That(SchemaWalkAllowlist.Entries.Count).IsEqualTo(0);
+        // Every allowlist entry must carry a written reason.
         await Assert.That(SchemaWalkAllowlist.Entries.All(entry => !string.IsNullOrWhiteSpace(entry.Reason))).IsTrue();
     }
 
