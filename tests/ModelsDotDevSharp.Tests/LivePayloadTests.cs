@@ -123,9 +123,7 @@ public class LivePayloadTests
         // The smoke path exercises the real HTTP request path through the repository, so the
         // replay-based comparisons below have a live baseline to trust.
         IModelInfoRepository repository = services.GetRequiredService<IModelInfoRepository>();
-        JsonElement root = await RetryAsync(() => FetchRawJsonAsync(services, ApiJsonPath), ApiJsonPath);
-        AIProviderInfo[] providers = await FetchFromRepositoryAsync(
-            ApiJsonPath, () => repository.GetProviderInfosAsync(), ApiJsonGaps, root);
+        AIProviderInfo[] providers = await RetryAsync(() => repository.GetProviderInfosAsync(), ApiJsonPath);
 
         await Assert.That(providers.Length).IsGreaterThan(0);
         await Assert.That(providers.Any(provider => provider.Models is { Length: > 0 })).IsTrue();
@@ -783,7 +781,7 @@ public class LivePayloadTests
             root = document.RootElement.Clone();
         }
 
-        using ServiceProvider replay = BuildReplayProvider(body);
+        using ServiceProvider replay = BuildReplayProvider(body, relativePath);
         T value = await FetchFromRepositoryAsync(relativePath, () => fetch(replay), gap, root);
         return new LiveFetch<T>(value, root, body);
     }
@@ -798,7 +796,7 @@ public class LivePayloadTests
         Func<IServiceProvider, Task<T>> fetch,
         string gap)
     {
-        using ServiceProvider replay = BuildReplayProvider(live.Body);
+        using ServiceProvider replay = BuildReplayProvider(live.Body, relativePath);
         return await FetchFromRepositoryAsync(relativePath, () => fetch(replay), gap, live.Root);
     }
 
@@ -806,11 +804,11 @@ public class LivePayloadTests
     /// Builds a consumer-wired provider whose HTTP layer replays <paramref name="body"/> instead of
     /// touching the network, keeping every real repository entry point in the decoding path.
     /// </summary>
-    private static ServiceProvider BuildReplayProvider(string body)
+    private static ServiceProvider BuildReplayProvider(string body, string endpoint)
     {
         ServiceCollection services = new();
         services.AddModelsDotDevSharp();
-        services.AddSingleton<IHttpClientFactory>(new ReplayHttpClientFactory(new ReplayHttpMessageHandler(body)));
+        services.AddSingleton<IHttpClientFactory>(new ReplayHttpClientFactory(new ReplayHttpMessageHandler(body, endpoint)));
         return services.BuildServiceProvider();
     }
 
@@ -850,12 +848,20 @@ public class LivePayloadTests
     private sealed record LiveFetch<T>(T Value, JsonElement Root, string Body);
 
     /// <summary>Answers every request with the captured live body, so replays never touch the network.</summary>
-    private sealed class ReplayHttpMessageHandler(string body) : HttpMessageHandler
+    private sealed class ReplayHttpMessageHandler(string body, string endpoint) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
+            string? requestedPath = request.RequestUri?.AbsolutePath;
+            if (request.Method != HttpMethod.Get || !string.Equals(requestedPath, endpoint, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"The replay handler captured {endpoint} but received {request.Method} {request.RequestUri}."
+                    + " Replays only serve a GET to the captured endpoint, so the requested URI signals a wrong-endpoint repository call.");
+            }
+
             return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
             {
                 Content = new StringContent(body, Encoding.UTF8, "application/json"),
@@ -1914,12 +1920,27 @@ public class LivePayloadTests
     /// </summary>
     private static int StrictDeserializeEndpoint(string endpoint, JsonElement root, List<string> failures)
     {
+        if (root.ValueKind != JsonValueKind.Object || !root.EnumerateObject().Any())
+        {
+            string actual = root.ValueKind != JsonValueKind.Object
+                ? root.ValueKind.ToString()
+                : "empty object";
+            string dump = root.ValueKind is JsonValueKind.Object or JsonValueKind.Array
+                ? Trim(root.GetRawText())
+                : actual;
+            failures.Add($"endpoint: {endpoint} | JSON path: $ | object (trimmed): {Trim(dump)} "
+                + $"| failure: Expected a non-empty JSON object at the endpoint root but found {actual}.");
+            return 0;
+        }
+
         int deserialized = 0;
         switch (endpoint)
         {
             case ApiJsonPath:
-                // The provider id map: each provider (models map flattened into the array the
-                // product's converter would build) deserializes strictly, models included.
+                // The provider id map: each model deserializes strictly by the direct check,
+                // preserving its wire map path. The normalized provider's other members
+                // validate without submitting its models for deserialization again, so each
+                // invalid model consumes only one report entry.
                 foreach (JsonProperty provider in root.EnumerateObject())
                 {
                     if (provider.Value.ValueKind != JsonValueKind.Object)
@@ -1974,7 +1995,7 @@ public class LivePayloadTests
 
                     deserialized++;
                     DeserializeStrict(failures, endpoint, $"$.['{provider.Name}']",
-                        FlattenProviderModels(provider.Value), SchemaWalkJsonContext.Default.AIProviderInfo, root);
+                        StripProviderModels(provider.Value), SchemaWalkJsonContext.Default.AIProviderInfo, root);
                 }
 
                 break;
@@ -2001,6 +2022,13 @@ public class LivePayloadTests
                 break;
 
             case CatalogJsonPath:
+                // The catalog root itself must satisfy the strict AICatalog contract so unknown
+                // root members are rejected. Nested providers and models are validated by the
+                // wire-path checks below, so the root check normalizes those containers away
+                // instead of submitting them for deserialization again.
+                DeserializeStrict(failures, endpoint, "$",
+                    NormalizeCatalogRootForStrictCheck(root), SchemaWalkJsonContext.Default.AICatalog, root);
+
                 if (root.TryGetProperty("providers", out JsonElement providers)
                     && providers.ValueKind == JsonValueKind.Object)
                 {
@@ -2060,7 +2088,7 @@ public class LivePayloadTests
 
                         deserialized++;
                         DeserializeStrict(failures, endpoint, $"$.providers['{provider.Name}']",
-                            FlattenProviderModels(provider.Value), SchemaWalkJsonContext.Default.AIProviderInfo, root);
+                            StripProviderModels(provider.Value), SchemaWalkJsonContext.Default.AIProviderInfo, root);
                     }
                 }
                 else
@@ -2174,37 +2202,53 @@ public class LivePayloadTests
     }
 
     /// <summary>
-    /// Rewrites one provider object's <c>models</c> map into the array the product's flattening
-    /// converter would build, so the strict context can deserialize a whole provider - models
-    /// included - without the product's converter, which hardcodes the product's contexts.
-    /// A non-object <c>models</c> member is rejected before normalization so arrays and other
-    /// wrong shapes never reach the array-expecting strict shape.
+    /// Rewrites one provider object without its <c>models</c> map so the strict context can
+    /// validate the provider's other members without submitting its models for deserialization
+    /// again. Each model is deserialized only by the direct wire-map-path check, so each invalid
+    /// model consumes only one report entry.
     /// </summary>
-    private static string FlattenProviderModels(JsonElement provider)
+    private static string StripProviderModels(JsonElement provider)
     {
-        if (provider.ValueKind == JsonValueKind.Object
-            && provider.TryGetProperty("models", out JsonElement models)
-            && models.ValueKind is not JsonValueKind.Object and not JsonValueKind.Null and not JsonValueKind.Undefined)
-        {
-            throw new JsonException($"Expected StartObject for \"models\" map. Got {models.ValueKind}.");
-        }
-
         using MemoryStream buffer = new();
         using (Utf8JsonWriter writer = new(buffer))
         {
             writer.WriteStartObject();
             foreach (JsonProperty member in provider.EnumerateObject())
             {
-                if (member.NameEquals("models") && member.Value.ValueKind == JsonValueKind.Object)
+                if (member.NameEquals("models"))
                 {
-                    writer.WritePropertyName("models");
-                    writer.WriteStartArray();
-                    foreach (JsonProperty model in member.Value.EnumerateObject())
-                    {
-                        model.Value.WriteTo(writer);
-                    }
+                    continue;
+                }
 
-                    writer.WriteEndArray();
+                member.WriteTo(writer);
+            }
+
+            writer.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
+    }
+
+    /// <summary>
+    /// Rewrites a <c>/catalog.json</c> root with its <c>providers</c> and <c>models</c>
+    /// containers emptied so the strict <c>AICatalog</c> contract validates the root's own
+    /// members (rejecting unknown root keys) without resubmitting nested providers and models,
+    /// which the wire-path checks below already cover.
+    /// </summary>
+    private static string NormalizeCatalogRootForStrictCheck(JsonElement root)
+    {
+        using MemoryStream buffer = new();
+        using (Utf8JsonWriter writer = new(buffer))
+        {
+            writer.WriteStartObject();
+            foreach (JsonProperty member in root.EnumerateObject())
+            {
+                if ((member.NameEquals("providers") || member.NameEquals("models"))
+                    && member.Value.ValueKind == JsonValueKind.Object)
+                {
+                    writer.WritePropertyName(member.Name);
+                    writer.WriteStartObject();
+                    writer.WriteEndObject();
                     continue;
                 }
 
@@ -2466,8 +2510,8 @@ public class LivePayloadTests
 
     private static string LastPathSegment(string path)
     {
-        List<string> segments = SplitPath(path);
-        return segments.Count > 0 ? segments[^1] : path;
+        List<PathSegment> segments = SplitPath(path);
+        return segments.Count > 0 ? segments[^1].Name : path;
     }
 
     private static InvalidOperationException AggregateByteLevelFailure(string headline, List<string> failures)
@@ -2509,11 +2553,11 @@ public class LivePayloadTests
             return null;
         }
 
-        List<string> segments = SplitPath(path);
+        List<PathSegment> segments = SplitPath(path);
         JsonElement current = root;
         JsonElement container = root;
 
-        foreach (string segment in segments)
+        foreach (PathSegment segment in segments)
         {
             container = current;
             if (!TryStep(current, segment, out JsonElement next))
@@ -2528,12 +2572,14 @@ public class LivePayloadTests
         return target.ValueKind is JsonValueKind.Object or JsonValueKind.Array ? Trimmed(target) : null;
     }
 
-    private static bool TryStep(JsonElement current, string segment, out JsonElement next)
+    private readonly record struct PathSegment(string Name, bool IsIndex);
+
+    private static bool TryStep(JsonElement current, PathSegment segment, out JsonElement next)
     {
         next = current;
         if (current.ValueKind == JsonValueKind.Object)
         {
-            if (current.TryGetProperty(segment, out next))
+            if (current.TryGetProperty(segment.Name, out next))
             {
                 return true;
             }
@@ -2541,8 +2587,11 @@ public class LivePayloadTests
             // A flattened models index (for example `models[0]` from the strict provider
             // deserialization) names the Nth entry of the original wire models map, so resolve
             // a numeric segment against the map's enumeration order to display the offending
-            // model instead of the entire map.
-            if (int.TryParse(segment, NumberStyles.None, CultureInfo.InvariantCulture, out int objectIndex)
+            // model instead of the entire map. Literal map keys such as "0" (from `['0']`)
+            // never take this path: they only match via the property lookup above so model
+            // lookup follows the serialized path correctly.
+            if (segment.IsIndex
+                && int.TryParse(segment.Name, NumberStyles.None, CultureInfo.InvariantCulture, out int objectIndex)
                 && objectIndex >= 0)
             {
                 int seen = 0;
@@ -2562,7 +2611,8 @@ public class LivePayloadTests
         }
 
         if (current.ValueKind == JsonValueKind.Array
-            && int.TryParse(segment, NumberStyles.None, CultureInfo.InvariantCulture, out int index)
+            && segment.IsIndex
+            && int.TryParse(segment.Name, NumberStyles.None, CultureInfo.InvariantCulture, out int index)
             && index >= 0
             && index < current.GetArrayLength())
         {
@@ -2573,9 +2623,9 @@ public class LivePayloadTests
         return false;
     }
 
-    private static List<string> SplitPath(string path)
+    private static List<PathSegment> SplitPath(string path)
     {
-        List<string> segments = [];
+        List<PathSegment> segments = [];
         int index = path.Length > 0 && path[0] == '$' ? 1 : 0;
 
         while (index < path.Length)
@@ -2592,7 +2642,7 @@ public class LivePayloadTests
 
                 if (index > start)
                 {
-                    segments.Add(path[start..index]);
+                    segments.Add(new PathSegment(path[start..index], IsIndex: false));
                 }
             }
             else if (character == '[')
@@ -2626,7 +2676,7 @@ public class LivePayloadTests
                         index++;
                     }
 
-                    segments.Add(key.ToString());
+                    segments.Add(new PathSegment(key.ToString(), IsIndex: false));
                 }
                 else
                 {
@@ -2636,7 +2686,7 @@ public class LivePayloadTests
                         index++;
                     }
 
-                    segments.Add(path[start..index]);
+                    segments.Add(new PathSegment(path[start..index], IsIndex: true));
                     if (index < path.Length)
                     {
                         index++; // closing bracket
@@ -2653,7 +2703,7 @@ public class LivePayloadTests
 
                 if (index > start)
                 {
-                    segments.Add(path[start..index]);
+                    segments.Add(new PathSegment(path[start..index], IsIndex: false));
                 }
             }
         }

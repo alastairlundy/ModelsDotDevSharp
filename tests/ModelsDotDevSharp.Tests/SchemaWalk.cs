@@ -34,9 +34,47 @@ using ModelsDotDevSharp.Converters;
 namespace ModelsDotDevSharp.Tests;
 
 /// <summary>
-/// Test-only string enum converter that accepts named values but rejects numeric tokens.
+/// Test-only string enum converter that accepts a single named value but rejects numeric tokens
+/// and comma-separated combinations such as "alpha, beta".
 /// </summary>
-internal sealed class StrictAIModelStatusConverter() : JsonStringEnumConverter<AIModelStatus>(allowIntegerValues: false);
+internal sealed class StrictAIModelStatusConverter : JsonConverter<AIModelStatus>
+{
+    public override AIModelStatus Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException(
+                $"Unsupported AIModelStatus token {reader.TokenType}; expected a single wire name such as \"beta\".");
+        }
+
+        string? text = reader.GetString();
+        if (text is not null && text.Contains(',', StringComparison.Ordinal))
+        {
+            throw new JsonException(
+                $"Unsupported AIModelStatus value \"{text}\"; expected a single wire name such as \"beta\".");
+        }
+
+        return text switch
+        {
+            "alpha" => AIModelStatus.Alpha,
+            "beta" => AIModelStatus.Beta,
+            "deprecated" => AIModelStatus.Deprecated,
+            _ => throw new JsonException(
+                $"Unsupported AIModelStatus value \"{text}\"; expected \"alpha\", \"beta\" or \"deprecated\"."),
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, AIModelStatus value, JsonSerializerOptions options)
+    {
+        writer.WriteStringValue(value switch
+        {
+            AIModelStatus.Alpha => "alpha",
+            AIModelStatus.Beta => "beta",
+            AIModelStatus.Deprecated => "deprecated",
+            _ => throw new ArgumentOutOfRangeException(nameof(value)),
+        });
+    }
+}
 
 /// <summary>
 /// Test-only string enum converter that accepts named values but rejects numeric tokens.
@@ -451,6 +489,11 @@ public static class SchemaWalk
         List<SchemaDriftFinding> findings,
         IReadOnlyList<SchemaWalkAllowlistEntry> allowlist)
     {
+        if (type == typeof(AIModelInterleaved))
+        {
+            ValidateInterleavedObject(element, path, findings);
+        }
+
         IReadOnlySet<string> expectedKeys = ExpectedKeys(type);
         IReadOnlyDictionary<string, PropertyInfo> properties = PropertiesByWireKey(type);
         s_converterShapes.TryGetValue(type, out WalkShape? shape);
@@ -604,11 +647,6 @@ public static class SchemaWalk
 
         if (value.ValueKind == JsonValueKind.Object && s_mappedTypes.Contains(type))
         {
-            if (type == typeof(AIModelInterleaved))
-            {
-                ValidateInterleavedObject(value, path, findings);
-            }
-
             WalkObject(value, type, path, idFromMapKey, findings, allowlist);
             return;
         }
@@ -889,7 +927,7 @@ public class SchemaWalkTests
 
         await Assert.That(converters.Any(converter => converter is FlexibleDateOnlyConverter)).IsTrue();
         await Assert.That(converters.Any(converter => converter is StrictInterleavedBooleanOrObjectConverter)).IsTrue();
-        await Assert.That(converters.Any(converter => converter is JsonStringEnumConverter<AIModelStatus>)).IsTrue();
+        await Assert.That(converters.Any(converter => converter is StrictAIModelStatusConverter)).IsTrue();
         await Assert.That(converters.Any(converter => converter is JsonStringEnumConverter<AIModelReasoningOptionType>)).IsTrue();
         await Assert.That(converters.Any(converter => converter is JsonStringEnumConverter<AIModelProviderShape>)).IsTrue();
         await Assert.That(converters.Any(converter => converter is JsonStringEnumConverter<AIModelInterleavedField>)).IsTrue();
@@ -930,6 +968,27 @@ public class SchemaWalkTests
         AIModelInterleaved? details = JsonSerializer.Deserialize(
             """{"field":"reasoning_details"}""", SchemaWalkJsonContext.Default.AIModelInterleaved);
         await Assert.That(details!.Field).IsEqualTo(AIModelInterleavedField.ReasoningDetails);
+    }
+
+    [Test]
+    public async Task StrictAIModelStatusConverter_RejectsCommaSeparatedNames()
+    {
+        AIModelStatus beta = JsonSerializer.Deserialize(
+            "\"beta\"", SchemaWalkJsonContext.Default.AIModelStatus);
+        await Assert.That(beta).IsEqualTo(AIModelStatus.Beta);
+
+        bool threw = false;
+        try
+        {
+            JsonSerializer.Deserialize(
+                "\"alpha, beta\"", SchemaWalkJsonContext.Default.AIModelStatus);
+        }
+        catch (JsonException)
+        {
+            threw = true;
+        }
+
+        await Assert.That(threw).IsTrue();
     }
 
     [Test]

@@ -7,7 +7,7 @@
     "precondition": "A refresh re-mirrors fragments from live payloads only while the live suite (LivePayloadTests) is green, so a re-mirror never bakes in unresolved drift. Re-mirroring regenerates expected values from live data through the library, pinning current behavior; the live layer owns drift detection.",
     "confirmation": "A human confirms the green precondition before the refresh lands.",
     "steps": [
-      "Run the live suite (dotnet test --solution src/ModelsDotDevSharp.slnx) and confirm it is green.",
+      "Run the live suite (dotnet test --solution src/ModelsDotDevSharp.slnx --treenode-filter \"/*/*/*/*[Category=Live]\") and confirm it is green.",
       "Have a human confirm the green precondition stated above.",
       "Re-mirror each curated fragment in PayloadContractTests.cs from the current live payload through the library, regenerating the expected values from that live data.",
       "Set every entry's lastRemirrored below to the re-mirror time (UTC, RFC 3339, e.g. 2026-11-27T19:42:02Z) in the same change that lands the refreshed fragments."
