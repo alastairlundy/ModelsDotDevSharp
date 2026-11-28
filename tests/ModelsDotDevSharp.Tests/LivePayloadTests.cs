@@ -117,12 +117,15 @@ public class LivePayloadTests
         using HttpClient client = services.GetRequiredService<IHttpClientFactory>().CreateClient();
         await Assert.That(client.Timeout).IsEqualTo(RequestTimeout);
 
+        // The smoke path exercises the real HTTP request path through the repository, so the
+        // replay-based comparisons below have a live baseline to trust.
         IModelInfoRepository repository = services.GetRequiredService<IModelInfoRepository>();
-        LiveFetch<AIProviderInfo[]> live = await FetchLiveAsync(
-            services, ApiJsonPath, () => repository.GetProviderInfosAsync(), ApiJsonGaps);
+        JsonElement root = await RetryAsync(() => FetchRawJsonAsync(services, ApiJsonPath), ApiJsonPath);
+        AIProviderInfo[] providers = await FetchFromRepositoryAsync(
+            ApiJsonPath, () => repository.GetProviderInfosAsync(), ApiJsonGaps, root);
 
-        await Assert.That(live.Value.Length).IsGreaterThan(0);
-        await Assert.That(live.Value.Any(provider => provider.Models is { Length: > 0 })).IsTrue();
+        await Assert.That(providers.Length).IsGreaterThan(0);
+        await Assert.That(providers.Any(provider => provider.Models is { Length: > 0 })).IsTrue();
     }
 
     /// <summary>
@@ -134,10 +137,12 @@ public class LivePayloadTests
     public async Task GetProviderInfos_ReturnsEveryProvider_WithThePinnedPerProviderShapes()
     {
         using ServiceProvider services = BuildLiveProvider();
-        IModelInfoRepository repository = services.GetRequiredService<IModelInfoRepository>();
 
         LiveFetch<AIProviderInfo[]> live = await FetchLiveAsync(
-            services, ApiJsonPath, () => repository.GetProviderInfosAsync(), ApiJsonGaps);
+            services,
+            ApiJsonPath,
+            static replay => replay.GetRequiredService<IModelInfoRepository>().GetProviderInfosAsync(),
+            ApiJsonGaps);
 
         AIProviderInfo[] providers = live.Value;
         await Assert.That(providers.Length).IsGreaterThan(0);
@@ -154,14 +159,19 @@ public class LivePayloadTests
     public async Task GetProviderInfoById_ReturnsTheProvider_TheCollectionEndpointServed()
     {
         using ServiceProvider services = BuildLiveProvider();
-        IModelInfoRepository repository = services.GetRequiredService<IModelInfoRepository>();
 
         LiveFetch<AIProviderInfo[]> live = await FetchLiveAsync(
-            services, ApiJsonPath, () => repository.GetProviderInfosAsync(), ApiJsonGaps);
+            services,
+            ApiJsonPath,
+            static replay => replay.GetRequiredService<IModelInfoRepository>().GetProviderInfosAsync(),
+            ApiJsonGaps);
 
         AIProviderInfo first = live.Value[0];
-        AIProviderInfo byId = await FetchFromRepositoryAsync(
-            ApiJsonPath, () => repository.GetProviderInfoByIdAsync(first.Id), ApiJsonGaps, live.Root);
+        AIProviderInfo byId = await FetchFromReplayAsync(
+            live,
+            ApiJsonPath,
+            replay => replay.GetRequiredService<IModelInfoRepository>().GetProviderInfoByIdAsync(first.Id),
+            ApiJsonGaps);
 
         await Assert.That(byId.Id).IsEqualTo(first.Id);
         await Assert.That(byId.Name).IsEqualTo(first.Name);
@@ -176,21 +186,23 @@ public class LivePayloadTests
     public async Task GetModelInfoById_ReturnsTheModel_TheCollectionEndpointServed()
     {
         using ServiceProvider services = BuildLiveProvider();
-        IModelInfoRepository repository = services.GetRequiredService<IModelInfoRepository>();
 
         LiveFetch<AIProviderInfo[]> live = await FetchLiveAsync(
-            services, ApiJsonPath, () => repository.GetProviderInfosAsync(), ApiJsonGaps);
+            services,
+            ApiJsonPath,
+            static replay => replay.GetRequiredService<IModelInfoRepository>().GetProviderInfosAsync(),
+            ApiJsonGaps);
 
         AIProviderInfo owner = live.Value.FirstOrDefault(provider => provider.Models is { Length: > 0 })
             ?? throw new InvalidOperationException(
                 "The live /api.json payload carried no provider with models, so there is no model to look up.");
 
         AIModelInfo expected = owner.Models[0];
-        AIModelInfo actual = await FetchFromRepositoryAsync(
+        AIModelInfo actual = await FetchFromReplayAsync(
+            live,
             ApiJsonPath,
-            () => repository.GetModelInfoByIdAsync(owner.Id, expected.Id),
-            ApiJsonGaps,
-            live.Root);
+            replay => replay.GetRequiredService<IModelInfoRepository>().GetModelInfoByIdAsync(owner.Id, expected.Id),
+            ApiJsonGaps);
 
         await Assert.That(actual.Id).IsEqualTo(expected.Id);
         await Assert.That(actual.Name).IsEqualTo(expected.Name);
@@ -204,16 +216,19 @@ public class LivePayloadTests
     public async Task EnumerateProviderInfos_YieldsTheSameProviders_AsTheCollectionEndpoint()
     {
         using ServiceProvider services = BuildLiveProvider();
-        IModelInfoRepository repository = services.GetRequiredService<IModelInfoRepository>();
 
         LiveFetch<AIProviderInfo[]> live = await FetchLiveAsync(
-            services, ApiJsonPath, () => repository.GetProviderInfosAsync(), ApiJsonGaps);
-
-        AIProviderInfo[] enumerated = await FetchFromRepositoryAsync(
+            services,
             ApiJsonPath,
-            async () => await repository.EnumerateProviderInfosAsync().ToArrayAsync(),
-            ApiJsonGaps,
-            live.Root);
+            static replay => replay.GetRequiredService<IModelInfoRepository>().GetProviderInfosAsync(),
+            ApiJsonGaps);
+
+        AIProviderInfo[] enumerated = await FetchFromReplayAsync(
+            live,
+            ApiJsonPath,
+            static async replay => await replay.GetRequiredService<IModelInfoRepository>()
+                .EnumerateProviderInfosAsync().ToArrayAsync(),
+            ApiJsonGaps);
 
         await Assert.That(enumerated.Length).IsEqualTo(live.Value.Length);
         await Assert.That(
@@ -231,12 +246,12 @@ public class LivePayloadTests
     public async Task EnumerateModelMetadata_YieldsEveryCompositeId_AndGetModelMetadataResolvesIt()
     {
         using ServiceProvider services = BuildLiveProvider();
-        IModelMetadataRepository repository = services.GetRequiredService<IModelMetadataRepository>();
 
         LiveFetch<AIModelMetadata[]> live = await FetchLiveAsync(
             services,
             ModelsJsonPath,
-            async () => await repository.EnumerateModelMetadataAsync().ToArrayAsync(),
+            static async replay => await replay.GetRequiredService<IModelMetadataRepository>()
+                .EnumerateModelMetadataAsync().ToArrayAsync(),
             ModelsJsonGaps);
 
         await Assert.That(live.Value.Length).IsGreaterThan(0);
@@ -244,11 +259,11 @@ public class LivePayloadTests
             metadata => !string.IsNullOrWhiteSpace(metadata.Id) && metadata.Id.Contains('/'))).IsTrue();
 
         AIModelMetadata first = live.Value[0];
-        AIModelMetadata resolved = await FetchFromRepositoryAsync(
+        AIModelMetadata resolved = await FetchFromReplayAsync(
+            live,
             ModelsJsonPath,
-            () => repository.GetModelMetadataAsync(first.Id!),
-            ModelsJsonGaps,
-            live.Root);
+            replay => replay.GetRequiredService<IModelMetadataRepository>().GetModelMetadataAsync(first.Id!),
+            ModelsJsonGaps);
 
         await Assert.That(resolved.Id).IsEqualTo(first.Id);
         await Assert.That(resolved.Name).IsEqualTo(first.Name);
@@ -263,10 +278,12 @@ public class LivePayloadTests
     public async Task GetCatalog_ReturnsBothThePerProviderView_AndTheCanonicalView()
     {
         using ServiceProvider services = BuildLiveProvider();
-        ICatalogRepository repository = services.GetRequiredService<ICatalogRepository>();
 
         LiveFetch<AICatalog> live = await FetchLiveAsync(
-            services, CatalogJsonPath, () => repository.GetCatalogAsync(), CatalogGaps);
+            services,
+            CatalogJsonPath,
+            static replay => replay.GetRequiredService<ICatalogRepository>().GetCatalogAsync(),
+            CatalogGaps);
 
         AICatalog catalog = live.Value;
         await Assert.That(catalog.Providers.Count).IsGreaterThan(0);
@@ -290,10 +307,12 @@ public class LivePayloadTests
     public async Task EveryRealApiJsonModel_HoldsTheValueAndResidueInvariants()
     {
         using ServiceProvider services = BuildLiveProvider();
-        IModelInfoRepository repository = services.GetRequiredService<IModelInfoRepository>();
 
         LiveFetch<AIProviderInfo[]> live = await FetchLiveAsync(
-            services, ApiJsonPath, () => repository.GetProviderInfosAsync(), ApiJsonGaps);
+            services,
+            ApiJsonPath,
+            static replay => replay.GetRequiredService<IModelInfoRepository>().GetProviderInfosAsync(),
+            ApiJsonGaps);
 
         Dictionary<string, AIProviderInfo> providersById = new(StringComparer.Ordinal);
         foreach (AIProviderInfo provider in live.Value)
@@ -360,12 +379,12 @@ public class LivePayloadTests
     public async Task EveryRealModelsJsonRecord_HoldsTheValueInvariants()
     {
         using ServiceProvider services = BuildLiveProvider();
-        IModelMetadataRepository repository = services.GetRequiredService<IModelMetadataRepository>();
 
         LiveFetch<AIModelMetadata[]> live = await FetchLiveAsync(
             services,
             ModelsJsonPath,
-            async () => await repository.EnumerateModelMetadataAsync().ToArrayAsync(),
+            static async replay => await replay.GetRequiredService<IModelMetadataRepository>()
+                .EnumerateModelMetadataAsync().ToArrayAsync(),
             ModelsJsonGaps);
 
         Dictionary<string, AIModelMetadata> byId = new(StringComparer.Ordinal);
@@ -412,10 +431,12 @@ public class LivePayloadTests
     public async Task EveryRealCatalogObject_HoldsTheValueAndResidueInvariants()
     {
         using ServiceProvider services = BuildLiveProvider();
-        ICatalogRepository repository = services.GetRequiredService<ICatalogRepository>();
 
         LiveFetch<AICatalog> live = await FetchLiveAsync(
-            services, CatalogJsonPath, () => repository.GetCatalogAsync(), CatalogGaps);
+            services,
+            CatalogJsonPath,
+            static replay => replay.GetRequiredService<ICatalogRepository>().GetCatalogAsync(),
+            CatalogGaps);
 
         AICatalog catalog = live.Value;
         List<InvariantFailure> failures = [];
@@ -681,8 +702,8 @@ public class LivePayloadTests
     private static bool IsTransientNetworkFailure(Exception exception) =>
         exception is HttpRequestException or TaskCanceledException or IOException;
 
-    /// <summary>Fetches the raw bytes of one endpoint through the suite's own configured client.</summary>
-    private static async Task<JsonElement> FetchRawJsonAsync(ServiceProvider services, string relativePath)
+    /// <summary>Fetches the raw body of one endpoint through the suite's own configured client.</summary>
+    private static async Task<string> FetchRawBodyAsync(ServiceProvider services, string relativePath)
     {
         IHttpClientFactory factory = services.GetRequiredService<IHttpClientFactory>();
         ModelsDevOptions options = services.GetRequiredService<IOptions<ModelsDevOptions>>().Value;
@@ -693,26 +714,66 @@ public class LivePayloadTests
         using HttpResponseMessage response = await client.GetAsync(relativePath);
         response.EnsureSuccessStatusCode();
 
-        string body = await response.Content.ReadAsStringAsync();
+        return await response.Content.ReadAsStringAsync();
+    }
+
+    /// <summary>Fetches the raw bytes of one endpoint through the suite's own configured client.</summary>
+    private static async Task<JsonElement> FetchRawJsonAsync(ServiceProvider services, string relativePath)
+    {
+        string body = await FetchRawBodyAsync(services, relativePath);
         using JsonDocument document = JsonDocument.Parse(body);
         return document.RootElement.Clone();
     }
 
     /// <summary>
-    /// Fetches one endpoint twice - once as raw bytes (the suite's byte view of the payload) and
-    /// once through the repository entry point (the consumer's view). A <see cref="JsonException"/>
-    /// from the repository path is the "no throw during deserialization" invariant failing, reported
-    /// with its JSON path, a trimmed dump of the offending object, and the guarded gap.
+    /// Captures one live response body per endpoint, then replays that same body through the real
+    /// repository entry points, so the wire view and the mapped view reflect the same payload. Only
+    /// the initial body capture touches the network. A <see cref="JsonException"/> from the replayed
+    /// repository path is the "no throw during deserialization" invariant failing, reported with its
+    /// JSON path, a trimmed dump of the offending object, and the guarded gap.
     /// </summary>
     private static async Task<LiveFetch<T>> FetchLiveAsync<T>(
         ServiceProvider services,
         string relativePath,
-        Func<Task<T>> fetch,
+        Func<IServiceProvider, Task<T>> fetch,
         string gap)
     {
-        JsonElement root = await RetryAsync(() => FetchRawJsonAsync(services, relativePath), relativePath);
-        T value = await FetchFromRepositoryAsync(relativePath, fetch, gap, root);
-        return new LiveFetch<T>(value, root);
+        string body = await RetryAsync(() => FetchRawBodyAsync(services, relativePath), relativePath);
+        JsonElement root;
+        using (JsonDocument document = JsonDocument.Parse(body))
+        {
+            root = document.RootElement.Clone();
+        }
+
+        using ServiceProvider replay = BuildReplayProvider(body);
+        T value = await FetchFromRepositoryAsync(relativePath, () => fetch(replay), gap, root);
+        return new LiveFetch<T>(value, root, body);
+    }
+
+    /// <summary>
+    /// Replays the captured body behind <paramref name="live"/> through another real repository entry
+    /// point, so lookup and enumeration comparisons observe the same payload as the collection fetch.
+    /// </summary>
+    private static async Task<T> FetchFromReplayAsync<T, TLive>(
+        LiveFetch<TLive> live,
+        string relativePath,
+        Func<IServiceProvider, Task<T>> fetch,
+        string gap)
+    {
+        using ServiceProvider replay = BuildReplayProvider(live.Body);
+        return await FetchFromRepositoryAsync(relativePath, () => fetch(replay), gap, live.Root);
+    }
+
+    /// <summary>
+    /// Builds a consumer-wired provider whose HTTP layer replays <paramref name="body"/> instead of
+    /// touching the network, keeping every real repository entry point in the decoding path.
+    /// </summary>
+    private static ServiceProvider BuildReplayProvider(string body)
+    {
+        ServiceCollection services = new();
+        services.AddModelsDotDevSharp();
+        services.AddSingleton<IHttpClientFactory>(new ReplayHttpClientFactory(new ReplayHttpMessageHandler(body)));
+        return services.BuildServiceProvider();
     }
 
     /// <summary>Runs one repository entry point under the retry loop, mapping deserialization failures.</summary>
@@ -748,7 +809,28 @@ public class LivePayloadTests
     private sealed record InvariantFailure(string JsonPath, string Invariant, string? Dump);
 
     /// <summary>The repository view of an endpoint next to the suite's raw byte view of the same fetch.</summary>
-    private sealed record LiveFetch<T>(T Value, JsonElement Root);
+    private sealed record LiveFetch<T>(T Value, JsonElement Root, string Body);
+
+    /// <summary>Answers every request with the captured live body, so replays never touch the network.</summary>
+    private sealed class ReplayHttpMessageHandler(string body) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
+                RequestMessage = request,
+            });
+        }
+    }
+
+    /// <summary>Hands out clients backed by the replay handler.</summary>
+    private sealed class ReplayHttpClientFactory(HttpMessageHandler handler) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
+    }
 
     private static List<InvariantFailure> CheckApiJsonModel(JsonElement rawModel, AIModelInfo model, string path)
     {
