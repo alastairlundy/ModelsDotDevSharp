@@ -114,6 +114,10 @@ jobs:
           stale=()
 
           while IFS=$'\t' read -r test stamp; do
+            if ! [[ "$stamp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$ ]]; then
+              fail "Fragment '$test' carries a lastRemirrored timestamp '$stamp' that is not UTC RFC 3339." \
+                "Use UTC RFC 3339, e.g. 2026-11-27T19:42:02Z."
+            fi
             if ! stamp_epoch="$(date -u -d "$stamp" +%s 2>/dev/null)"; then
               fail "Fragment '$test' carries an unparseable lastRemirrored timestamp '$stamp'." \
                 "Use UTC RFC 3339, e.g. 2026-11-27T19:42:02Z."
